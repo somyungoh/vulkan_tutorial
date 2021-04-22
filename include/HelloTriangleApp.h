@@ -13,11 +13,17 @@ public:
 
 private:
     void initGLFW();
-    void initVulkan();
     void mainLoop();
+
+    void initVulkan();
+    void createVulkanInstance();
+
     void cleanup();
+
 
     GLFWwindow* window;
     const uint32_t WIDTH;
     const uint32_t HEIGHT;
+
+    VkInstance m_VkInstance;
 };
