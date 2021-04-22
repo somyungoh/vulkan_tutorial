@@ -36,7 +36,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 # --- Target Properties
 # sources
-add_executable(Hello_Triangle src/main.cpp)
+add_executable(Hello_Triangle src/main.cpp src/HelloTriangleApp.cpp)
 
 # linking
 target_link_libraries(Hello_Triangle Vulkan)
