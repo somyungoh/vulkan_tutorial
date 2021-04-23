@@ -12,18 +12,18 @@ public:
     void run();
 
 private:
-    void initGLFW();
-    void mainLoop();
+    void    initGLFW();
+    void    mainLoop();
 
-    void initVulkan();
-    void createVulkanInstance();
+    void    initVulkan();
+    void    createVulkanInstance();
 
-    void cleanup();
+    void    cleanup();
 
 
-    GLFWwindow* window;
-    const uint32_t WIDTH;
-    const uint32_t HEIGHT;
+    GLFWwindow*     window;
+    const uint32_t  WIDTH;
+    const uint32_t  HEIGHT;
 
-    VkInstance m_VkInstance;
+    VkInstance      m_VkInstance;
 };

@@ -1,6 +1,7 @@
 #include "HelloTriangleApp.h"
 
 #include <iostream>
+#include <vector>
 
 // constructor, destructors
 HelloTriangleApp::HelloTriangleApp()
@@ -56,6 +57,7 @@ void HelloTriangleApp::mainLoop()
     }
 }
 
+
 //::::::::::::::::::::::
 //      Vulkan          
 //::::::::::::::::::::::
@@ -63,8 +65,6 @@ void HelloTriangleApp::mainLoop()
 void HelloTriangleApp::initVulkan()
 {
     createVulkanInstance();
-
-    std::cout << "Successfully initialized Vulkan" << std::endl;
 }
 
 // connection between the program and the vulkan library.
@@ -88,10 +88,29 @@ void HelloTriangleApp::createVulkanInstance()
     VkInstanceCreateInfo vkCreateInfo{};
     vkCreateInfo.sType                      = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     vkCreateInfo.pApplicationInfo           = &vkAppInfo;
-    uint32_t glfwExtensionCount;
-    vkCreateInfo.ppEnabledExtensionNames    = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+    uint32_t        glfwExtensionCount      = -1;
+    const char**    glfwExtensions          = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+    vkCreateInfo.ppEnabledExtensionNames    = glfwExtensions;
     vkCreateInfo.enabledExtensionCount      = glfwExtensionCount;
     vkCreateInfo.enabledLayerCount          = 0;    // TODO: what's this?
+
+
+#if 1
+    // optional) available extension check
+    uint32_t n_ExtensionCount = 0;
+    vkEnumerateInstanceExtensionProperties(nullptr, &n_ExtensionCount, nullptr);
+    std::vector<VkExtensionProperties> extensions(n_ExtensionCount);
+    vkEnumerateInstanceExtensionProperties(nullptr, &n_ExtensionCount, extensions.data());
+
+    // print vulkan ext.
+    std::cout << "Available Vulkan Extensions:" << std::endl;
+    for (const auto& extension : extensions)
+        std::cout << "\t" << extension.extensionName << std::endl;
+    // print glfw ext.
+    std::cout << "Required GLFW Extensions:" << std::endl;
+    for (int i = 0; i < glfwExtensionCount; i++)
+        std::cout << "\t" << glfwExtensions[i] << std::endl;
+#endif
 
     // vulkan instance.
     // this is a general pattern of creating a vulkan object:
@@ -113,6 +132,9 @@ void HelloTriangleApp::createVulkanInstance()
 // application exit
 void HelloTriangleApp::cleanup()
 {
+    // Vulkan
+    vkDestroyInstance(m_VkInstance, nullptr);
+
     // GLFW
     glfwDestroyWindow(window);
     glfwTerminate();
