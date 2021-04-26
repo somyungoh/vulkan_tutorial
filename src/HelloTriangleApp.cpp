@@ -1,13 +1,15 @@
 #include "HelloTriangleApp.h"
 
 #include <iostream>
-#include <vector>
+#include <cstring>
+#include <stdexcept>
 
 // constructor, destructors
 HelloTriangleApp::HelloTriangleApp()
     : WIDTH(800), HEIGHT(600) {};
 
 HelloTriangleApp::~HelloTriangleApp() {};
+
 
 void HelloTriangleApp::run()
 {
@@ -48,6 +50,7 @@ void HelloTriangleApp::initGLFW()
         std::cout << "Successfully initialized GLFW window" << std::endl;
 }
 
+
 // main event loop for GLFW
 void HelloTriangleApp::mainLoop()
 {
@@ -67,8 +70,13 @@ void HelloTriangleApp::initVulkan()
     createVulkanInstance();
 }
 
-// connection between the program and the vulkan library.
-// this will involve specifying hardware specs.
+
+// -------------------<<  vulkan instance  >>------------------------
+//
+//  connection between the program and the vulkan library.
+//  this will involve specifying hardware specs.
+//
+// ------------------------------------------------------------------
 void HelloTriangleApp::createVulkanInstance()
 {
     // in vulkan, in many cases, data is passed through different structs
@@ -84,15 +92,26 @@ void HelloTriangleApp::createVulkanInstance()
     vkAppInfo.engineVersion       = VK_MAKE_VERSION(1, 0, 0);
     vkAppInfo.apiVersion          = VK_API_VERSION_1_0;
 
+
     // struct: vulkan instance information
     VkInstanceCreateInfo vkCreateInfo{};
     vkCreateInfo.sType                      = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     vkCreateInfo.pApplicationInfo           = &vkAppInfo;
+    // extensions
     uint32_t        glfwExtensionCount      = -1;
     const char**    glfwExtensions          = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
     vkCreateInfo.ppEnabledExtensionNames    = glfwExtensions;
     vkCreateInfo.enabledExtensionCount      = glfwExtensionCount;
-    vkCreateInfo.enabledLayerCount          = 0;    // TODO: what's this?
+    // validation layers
+    if (enableValidationLayers && !checkValidationLayerSupport())
+        throw std::runtime_error("Invalid validation layer requested");
+    if (enableValidationLayers)
+    {
+        vkCreateInfo.enabledLayerCount      = static_cast<uint32_t>(validationLayers.size());
+        vkCreateInfo.ppEnabledLayerNames    = validationLayers.data();
+    }
+    else
+        vkCreateInfo.enabledLayerCount      = 0;
 
 
 #if 1
@@ -112,7 +131,6 @@ void HelloTriangleApp::createVulkanInstance()
         std::cout << "\t" << glfwExtensions[i] << std::endl;
 #endif
 
-    // vulkan instance.
     // this is a general pattern of creating a vulkan object:
     VkResult result = vkCreateInstance(
         &vkCreateInfo,  // pointer to a struct that defines the object
@@ -128,6 +146,52 @@ void HelloTriangleApp::createVulkanInstance()
 
     std::cout << "Successfully created Vulkan Instance" << std::endl;
 }
+
+
+// ------------------------<< Validation Layers >>--------------------------
+//
+//  This is to handle the possible errors explicitly to avoid crashes.
+//  By default, Vulkan has very limited tools for error handling, so
+//  it is important to use this well. Possible handlings you can do:
+//    o Parameter values 
+//    o Track object creation & destruction
+//    o Check thread safety
+//    o Log function calls and parameters
+//    o Tracing Vulkan calls for profiling & replaying
+//
+//  In practice, you can use this for Debug mode, and disable it in the
+//  release version. 
+//
+// -------------------------------------------------------------------------
+bool HelloTriangleApp::checkValidationLayerSupport()
+{
+    // load all available validation layers
+    uint32_t n_LayerCount;
+    vkEnumerateInstanceLayerProperties(&n_LayerCount, nullptr);
+
+    std::vector<VkLayerProperties> availableLayers(n_LayerCount);
+    vkEnumerateInstanceLayerProperties(&n_LayerCount, availableLayers.data());
+
+    // check if our validation layers are in the available list
+    for (const char* layer : validationLayers)
+    {
+        bool isLayerFound = false;
+        for (const auto& layerProperties : availableLayers)
+        {
+            if (strcmp(layer, layerProperties.layerName) == 0)
+            {
+                isLayerFound = true;
+                std::cout << "Requested Validation Layer found: " << layer << std::endl;
+                break;
+            }
+        }
+        if (!isLayerFound)
+            return false;
+    }
+
+    return true;
+}
+
 
 // application exit
 void HelloTriangleApp::cleanup()
