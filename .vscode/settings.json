@@ -1,6 +1,7 @@
 {
     "cmake.configureOnOpen": true,
     "files.associations": {
-        "exception": "cpp"
+        "exception": "cpp",
+        "vector": "cpp"
     }
 }
