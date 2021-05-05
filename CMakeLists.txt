@@ -26,8 +26,8 @@ include_directories(${GLFW_INCLUDE_DIRS})
 
 
 # --- Files
-set(SOURCES **.h)
-set(SOURCES **.cpp)
+set(HEADERS include/**.h)
+set(SOURCES src/**.cpp)
 
 
 # --- Output dir
@@ -36,7 +36,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 # --- Target Properties
 # sources
-add_executable(Hello_Triangle src/main.cpp src/HelloTriangleApp.cpp)
+add_executable(Hello_Triangle src/main.cpp src/HelloTriangleApp.cpp src/VulkanManager.cpp)
 
 # linking
 target_link_libraries(Hello_Triangle Vulkan)
@@ -45,7 +45,7 @@ target_link_libraries(Hello_Triangle ${GLFW_LIBRARIES})
 # include dirs
 target_include_directories(Hello_Triangle PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
-
+ 
 # --- other properties
 set_property(TARGET Hello_Triangle PROPERTY CXX_STANDARD 11)
 
@@ -56,6 +56,16 @@ enable_testing()
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
 include(CPack)
+
+# --- compiler
+if (MSVC)
+    # warning level 4 and all warnings as errors
+    add_compile_options(/W4 /WX)
+else()
+    # lots of warnings
+    add_compile_options(-Wall -Wextra -Wreturn-type -pedantic)
+endif()
+
 
 # export build/complie_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
