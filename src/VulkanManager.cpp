@@ -1,9 +1,17 @@
 #include "VulkanManager.h"
+#include "Common.h"
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
 #include <iostream>
+#include <map>
+
+VulkanManager::VulkanManager() :
+    m_device(VK_NULL_HANDLE),
+    m_validationLayers({ "VK_LAYER_KHRONOS_validation" })
+    {};
+
 
 // -------------------<<  Bonjour Vulkan!  >>------------------------
 //
@@ -16,6 +24,7 @@ void VulkanManager::initVulkan()
 {
     createVulkanInstance();
     createDebugMessenger();
+    loadPhysicalDevice();
 }
 
 
@@ -59,7 +68,7 @@ void VulkanManager::createVulkanInstance()
     }
     else
         vkCreateInfo.enabledLayerCount      = 0;
-
+    PRINT_BAR();
 #if 1
     // optional) available extension check
     uint32_t n_ExtensionCount = 0;
@@ -68,9 +77,9 @@ void VulkanManager::createVulkanInstance()
     vkEnumerateInstanceExtensionProperties(nullptr, &n_ExtensionCount, vk_extensions.data());
 
     // print vulkan ext.
-    std::cout << "Available Vulkan Extensions:" << std::endl;
+    PRINTLN_VERBOSE("Available Vulkan Extensions:");
     for (const auto& extension : vk_extensions)
-        std::cout << "\t" << extension.extensionName << std::endl;
+        PRINTLN("\t" << extension.extensionName);
     // print glfw ext.
 #endif
 
@@ -83,11 +92,11 @@ void VulkanManager::createVulkanInstance()
 
     if (result != VK_SUCCESS)
     {
-        std::cout << "Failed to create Vulkan Instance" << std::endl;
+        PRINTLN("Failed to create Vulkan Instance");
         return;
     }
 
-    std::cout << "Successfully created Vulkan Instance" << std::endl;
+    PRINTLN_VERBOSE("Successfully created Vulkan Instance");
 }
 
 
@@ -167,6 +176,8 @@ std::vector<const char*> VulkanManager::loadVKExtensions()
 void VulkanManager::createDebugMessenger()
 {
     if (!enableValidationLayers) return;
+
+    PRINT_BAR();
 
     VkDebugUtilsMessengerCreateInfoEXT createInfo {};
     createInfo.sType            = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
@@ -248,7 +259,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanManager::debugCallback(
         std::cerr << "GENERAL|";
 
     // Message itself (pCallbackData->pMessage)
-    std::cout << pCallbackData->pMessage << std::endl;
+    PRINTLN(pCallbackData->pMessage);
 
     // Your own data (pUserData)
     (void)pUserData;
@@ -258,8 +269,95 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanManager::debugCallback(
 }
 
 
-// application exit
-void    VulkanManager::cleanVulkan()
+// -------------------<<  Physical Device  >>------------------------
+//
+//  Search for available GPU device and select one. It is loaded
+//  in VkPhysicalDevice.
+//
+// ------------------------------------------------------------------
+
+void VulkanManager::loadPhysicalDevice()
+{
+    PRINT_BAR();
+
+    uint32_t deviceCount = 0;
+    vkEnumeratePhysicalDevices(m_VkInstance, &deviceCount, nullptr);
+    std::vector<VkPhysicalDevice> devices(deviceCount);
+    vkEnumeratePhysicalDevices(m_VkInstance, &deviceCount, devices.data());
+
+    if (deviceCount == 0)
+        throw std::runtime_error("Failed to find GPUs with Vulkan Support!");
+
+    // an ordered map, allows multiple elements to have same keys
+    std::multimap<int, VkPhysicalDevice> candidates;
+
+    // score each available devices to pick a best one
+    PRINTLN_VERBOSE("Starting to score available GPUs...");
+
+    for (const auto& device : devices)
+    {
+        uint32_t score = rateDeviceSuitability(device);
+        candidates.insert(std::make_pair(score, device));
+    }
+
+    // if (candidates.size() == 1){
+    //     m_device = candidates.begin()->second;
+    // }
+    if (candidates.rbegin()->first > 0)
+        m_device = candidates.rbegin()->second;
+    else if (m_device == VK_NULL_HANDLE)
+        throw std::runtime_error("Failed to find a suitable GPU!");
+}
+
+u_int32_t VulkanManager::rateDeviceSuitability(VkPhysicalDevice device)
+{
+    PRINT_BAR();
+
+    // Here, these queries gives much more information than just the
+    // GPU information (texture compression, multi-viewport rendering)
+    VkPhysicalDeviceProperties  deviceProperties;
+    VkPhysicalDeviceFeatures    deviceFeatures;
+    vkGetPhysicalDeviceProperties(device, &deviceProperties);
+    vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+
+    // GPU Details
+    PRINTLN_VERBOSE("GPU Name: " << deviceProperties.deviceName);
+    PRINTLN_VERBOSE("Scoring:");
+
+    u_int32_t score = 0;
+
+    // Criteria 1) Obviously, discrete GPUs are always better
+    if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+    {
+        score += 100;   // no idea how the scale should be...
+        PRINTLN_VERBOSE("\tDiscrete GPU - score 100");
+    }
+    else
+        PRINTLN_VERBOSE("\tNot a Discrete GPU - score 0");
+    // Criteria 2) Maximum texture size
+    score += deviceProperties.limits.maxImageDimension2D;
+    PRINTLN_VERBOSE("\tMax 2D texture dimension: " << deviceProperties.limits.maxImageDimension2D);
+
+    // Criteria 3) Geometry shaders
+    if (!deviceFeatures.geometryShader)
+    {
+        score -= 100;   // lol.
+        PRINTLN_VERBOSE("\tGeometry Shader not available, minus score 100...");
+    }
+
+    PRINTLN_VERBOSE("\tThe final score is: " << score);
+
+    return score;
+}
+
+
+// --------------------------<<  Exit  >>---------------------------
+//
+//  VkPhysicalDevice - automatically handled
+//
+// ------------------------------------------------------------------
+
+void VulkanManager::cleanVulkan()
 {
     // Vulkan
     // extensions must be destroyed before vulkan instance
@@ -267,5 +365,5 @@ void    VulkanManager::cleanVulkan()
         destroyDebugUtilsMessengerEXT(m_VkInstance, &m_debugMessenger, nullptr);
     vkDestroyInstance(m_VkInstance, nullptr);
     
-    std::cout << "Successfully cleaning up Vulkan..." << std::endl;
+    PRINTLN("Successfully cleaning up Vulkan...");
 }

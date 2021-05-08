@@ -5,6 +5,7 @@
 #include <cstring>
 #include <stdexcept>
 
+
 // constructor, destructors
 HelloTriangleApp::HelloTriangleApp()
     : WIDTH(800), HEIGHT(600) {};
