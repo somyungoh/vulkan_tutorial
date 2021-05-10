@@ -3,7 +3,7 @@
 // common header that defines various configuration and macros
 
 #include <vector>
-#include <string>
+#include <iostream>
 
 #define VERBOSE 1
 

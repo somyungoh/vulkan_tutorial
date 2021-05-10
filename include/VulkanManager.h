@@ -4,6 +4,7 @@
 
 #include <vector>
 
+struct QueueFamilyIndices;
 
 class VulkanManager
 {
@@ -40,6 +41,10 @@ private:
 
     void        loadPhysicalDevice();
     u_int32_t   rateDeviceSuitability(VkPhysicalDevice);
+    bool        isDeviceSuitable(VkPhysicalDevice);
+
+    // << Queue Family >> subset of vulkan commands
+    QueueFamilyIndices    findQueueFamilies(VkPhysicalDevice);
 
     void    cleanVulkan();
 

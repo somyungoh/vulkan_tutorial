@@ -4,13 +4,19 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-#include <iostream>
+#include <optional>
 #include <map>
 
-VulkanManager::VulkanManager() :
-    m_device(VK_NULL_HANDLE),
-    m_validationLayers({ "VK_LAYER_KHRONOS_validation" })
-    {};
+
+
+struct QueueFamilyIndices
+{
+    // std::optional - c++17 extension, which contains nothing until
+    // something is assigned, and can be checked using has_value()
+    std::optional<u_int32_t> graphicsFamily;
+
+    bool isComplete() { return graphicsFamily.has_value(); };
+};
 
 
 // -------------------<<  Bonjour Vulkan!  >>------------------------
@@ -19,6 +25,13 @@ VulkanManager::VulkanManager() :
 //  "Vulkan Tutorial" https://vulkan-tutorial.com
 //
 // ------------------------------------------------------------------
+
+VulkanManager::VulkanManager() :
+    m_device(VK_NULL_HANDLE),
+    m_validationLayers({ "VK_LAYER_KHRONOS_validation" })
+    {
+    };
+
 
 void VulkanManager::initVulkan()
 {
@@ -300,10 +313,7 @@ void VulkanManager::loadPhysicalDevice()
         candidates.insert(std::make_pair(score, device));
     }
 
-    // if (candidates.size() == 1){
-    //     m_device = candidates.begin()->second;
-    // }
-    if (candidates.rbegin()->first > 0)
+    if (candidates.rbegin()->first > 0 && isDeviceSuitable(candidates.rbegin()->second))
         m_device = candidates.rbegin()->second;
     else if (m_device == VK_NULL_HANDLE)
         throw std::runtime_error("Failed to find a suitable GPU!");
@@ -334,6 +344,7 @@ u_int32_t VulkanManager::rateDeviceSuitability(VkPhysicalDevice device)
     }
     else
         PRINTLN_VERBOSE("\tNot a Discrete GPU - score 0");
+
     // Criteria 2) Maximum texture size
     score += deviceProperties.limits.maxImageDimension2D;
     PRINTLN_VERBOSE("\tMax 2D texture dimension: " << deviceProperties.limits.maxImageDimension2D);
@@ -348,6 +359,50 @@ u_int32_t VulkanManager::rateDeviceSuitability(VkPhysicalDevice device)
     PRINTLN_VERBOSE("\tThe final score is: " << score);
 
     return score;
+}
+
+bool VulkanManager::isDeviceSuitable(VkPhysicalDevice device)
+{
+    QueueFamilyIndices indices = findQueueFamilies(device);
+
+    return indices.isComplete();
+}
+
+
+// --------------------<<  Queue Families  >>----------------------------
+//
+//  In Vulkan, everything in GPU - from data loading, drawing - require
+//  commands to be submitted to a queue. There are different types of
+//  queues that allows a subset of commands, and this is called the
+//  "Queue Family". For now, we only search for 'Graphics commands'.
+//
+// ----------------------------------------------------------------------
+
+QueueFamilyIndices VulkanManager::findQueueFamilies(VkPhysicalDevice device)
+{
+    PRINT_BAR();
+
+    QueueFamilyIndices indices;
+
+    u_int32_t n_queueFamily;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &n_queueFamily, nullptr);
+
+    // VkQueueFamilyProperties will contain the details of the queue family
+    std::vector<VkQueueFamilyProperties> queueFamilies(n_queueFamily);
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &n_queueFamily, queueFamilies.data());
+
+    int i = 0;
+    for (const auto& queueFamily : queueFamilies)
+    {
+        if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+            indices.graphicsFamily = i;
+        i++;
+    }
+
+    if (indices.isComplete())
+        PRINT_VERBOSE("Graphics Quefamily indices: " << std::bitset<8>(indices.graphicsFamily.value()) << std::flush);
+
+    return indices;
 }
 
 

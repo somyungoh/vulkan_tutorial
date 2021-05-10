@@ -47,7 +47,7 @@ target_include_directories(Hello_Triangle PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
  
 # --- other properties
-set_property(TARGET Hello_Triangle PROPERTY CXX_STANDARD 11)
+set_property(TARGET Hello_Triangle PROPERTY CXX_STANDARD 17)
 
 include(CTest)
 enable_testing()
