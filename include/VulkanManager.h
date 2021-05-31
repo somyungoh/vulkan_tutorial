@@ -46,6 +46,8 @@ private:
     // << Queue Family >> subset of vulkan commands
     QueueFamilyIndices    findQueueFamilies(VkPhysicalDevice);
 
+    void    createLogicalDevice();
+
     void    cleanVulkan();
 
     // << Vulkan Instance >> connects between the application and the Vulkan library.
@@ -57,9 +59,12 @@ private:
     const bool enableValidationLayers = false;
 #else
     const bool enableValidationLayers = true;
-    // Message callback handler
 #endif
 
     // << Physical Device >>
-    VkPhysicalDevice                m_device;
+    VkPhysicalDevice                m_physicalDevice;
+
+    // << Logical Device >>
+    VkDevice                        m_device;
+    VkQueue                         m_graphicsQueue;
 };

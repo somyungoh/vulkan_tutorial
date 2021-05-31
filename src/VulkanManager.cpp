@@ -27,6 +27,7 @@ struct QueueFamilyIndices
 // ------------------------------------------------------------------
 
 VulkanManager::VulkanManager() :
+    m_physicalDevice(VK_NULL_HANDLE),
     m_device(VK_NULL_HANDLE),
     m_validationLayers({ "VK_LAYER_KHRONOS_validation" })
     {
@@ -38,6 +39,7 @@ void VulkanManager::initVulkan()
     createVulkanInstance();
     createDebugMessenger();
     loadPhysicalDevice();
+    createLogicalDevice();
 }
 
 
@@ -314,8 +316,8 @@ void VulkanManager::loadPhysicalDevice()
     }
 
     if (candidates.rbegin()->first > 0 && isDeviceSuitable(candidates.rbegin()->second))
-        m_device = candidates.rbegin()->second;
-    else if (m_device == VK_NULL_HANDLE)
+        m_physicalDevice = candidates.rbegin()->second;
+    else if (m_physicalDevice == VK_NULL_HANDLE)
         throw std::runtime_error("Failed to find a suitable GPU!");
 }
 
@@ -400,9 +402,71 @@ QueueFamilyIndices VulkanManager::findQueueFamilies(VkPhysicalDevice device)
     }
 
     if (indices.isComplete())
-        PRINT_VERBOSE("Graphics Quefamily indices: " << std::bitset<8>(indices.graphicsFamily.value()) << std::flush);
+        PRINTLN_VERBOSE("Graphics Queue family indices: " << indices.graphicsFamily.value());
 
     return indices;
+}
+
+
+// ----------------------<<  Logical Device  >>-----------------------------
+//
+//  After selecting a physical device, we need to setup a 'logical device'
+//  to interface with it. Here, we specify which queues to create from
+//  the queue family that we quried previously.
+//
+// -------------------------------------------------------------------------
+
+void VulkanManager::createLogicalDevice()
+{
+    // 1. specify the queue to be created
+    QueueFamilyIndices indices = findQueueFamilies(m_physicalDevice);
+
+    VkDeviceQueueCreateInfo queueCreateInfo{};
+    queueCreateInfo.sType               = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    queueCreateInfo.queueFamilyIndex    = indices.graphicsFamily.value();
+    queueCreateInfo.queueCount          = 1;    // why is this only 1? It's because
+    // drivers will allow small number of queues for each queue family,
+    // and we'll create all the command-buffers on multiple threads and
+    // submit them all at once on the main thread, so we just need one per thread.
+
+    // Priorities are assigned to queues which will later influence the
+    // scheduling of command buffer execution. Pretty nice.
+    float queuePriority = 1.0f;     // between (0.0 ~ 1.0)
+    queueCreateInfo.pQueuePriorities = &queuePriority;
+
+    // 2. Specify used device features, the features that we queried previously
+    // using 'VkPhysicalDeviceFeatures' (e.g. geometry shaders)
+    VkPhysicalDeviceFeatures deviceFeatures{};
+
+    // 3. Create the logical device
+    VkDeviceCreateInfo deviceCreateInfo{};
+    deviceCreateInfo.sType                  = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    deviceCreateInfo.pQueueCreateInfos      = &queueCreateInfo;
+    deviceCreateInfo.queueCreateInfoCount   = 1;
+    deviceCreateInfo.pEnabledFeatures       = &deviceFeatures;
+
+    // notice that we've already set the extension & validation layers for VkInstance.
+    // we do the same thing for the physical device, which is actually not necessary
+    // because Vulkan will automatically pick the up-to-date info, but it's good to 
+    // specify anyways.
+    deviceCreateInfo.enabledExtensionCount = 0;
+    if (enableValidationLayers)
+    {
+        deviceCreateInfo.enabledLayerCount   = static_cast<uint32_t>(m_validationLayers.size());
+        deviceCreateInfo.ppEnabledLayerNames = m_validationLayers.data();
+    }
+    else
+        deviceCreateInfo.enabledLayerCount = 0;
+
+    // 4. Instantiate logical device!
+    if (vkCreateDevice(m_physicalDevice, &deviceCreateInfo, nullptr, &m_device) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create Vulkan logical device");
+
+    // 5. Retrieve queue handles (here, graphics queue)
+    // Normally, the queues are automatically created along with the logical device,
+    // but we need a handler to interface with them.
+    const uint32_t k_queueIndex = 0;    // since we know that we only have one family...
+    vkGetDeviceQueue(m_device, indices.graphicsFamily.value(), k_queueIndex, &m_graphicsQueue);
 }
 
 
@@ -414,11 +478,11 @@ QueueFamilyIndices VulkanManager::findQueueFamilies(VkPhysicalDevice device)
 
 void VulkanManager::cleanVulkan()
 {
-    // Vulkan
     // extensions must be destroyed before vulkan instance
     if (enableValidationLayers)
         destroyDebugUtilsMessengerEXT(m_VkInstance, &m_debugMessenger, nullptr);
     vkDestroyInstance(m_VkInstance, nullptr);
+    vkDestroyDevice(m_device, nullptr);
     
     PRINTLN("Successfully cleaning up Vulkan...");
 }
