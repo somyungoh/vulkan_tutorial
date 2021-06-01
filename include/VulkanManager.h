@@ -5,13 +5,14 @@
 #include <vector>
 
 struct QueueFamilyIndices;
+struct GLFWwindow;
 
 class VulkanManager
 {
 public:
     VulkanManager();
 
-    void    initVulkan();
+    void    initVulkan(GLFWwindow*);
 
 private:
     void                        createVulkanInstance();
@@ -48,7 +49,11 @@ private:
 
     void    createLogicalDevice();
 
+    void    createWindowSurface(GLFWwindow*);
+
     void    cleanVulkan();
+
+
 
     // << Vulkan Instance >> connects between the application and the Vulkan library.
     VkInstance                      m_VkInstance;
@@ -67,4 +72,7 @@ private:
     // << Logical Device >>
     VkDevice                        m_device;
     VkQueue                         m_graphicsQueue;
+
+    // << Window Surface >>
+    VkSurfaceKHR                    m_windowSurface;
 };

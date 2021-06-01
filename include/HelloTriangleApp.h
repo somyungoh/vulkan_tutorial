@@ -7,7 +7,6 @@
 // forward declaration
 class VulkanManager;
 
-
 class HelloTriangleApp
 {
 public:

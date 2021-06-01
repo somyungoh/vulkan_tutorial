@@ -54,7 +54,7 @@ void HelloTriangleApp::initGLFW()
 
 void HelloTriangleApp::initVulkanManager()
 {
-    m_VulkanManager->initVulkan();
+    m_VulkanManager->initVulkan(m_Window);
 }
 
 // main event loop for GLFW

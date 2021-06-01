@@ -1,12 +1,27 @@
 #include "VulkanManager.h"
 #include "Common.h"
 
+// required for window surface (by Vulkan)
+// reference) https://www.khronos.org/registry/vulkan/specs/1.2-extensions/html/vkspec.html#vkCreateMacOSSurfaceMVK
+#if defined(_WIN32) || defined(_WIN64)
+#   define VK_USE_PLATFORM_WIN32_KHR
+#elif defined(__APPLE__)
+#   define VK_USE_PLATFORM_MACOS_MVK
+#endif  // defined(_WIN32) || defined(_WIN64)
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+// required for window surface (by GLFW)
+// reference) https://www.glfw.org/docs/3.3/group__native.html
+#if defined(_WIN32) || defined(_WIN64)
+#   define GLFW_EXPOSE_NATIVE_WIN32
+#elif defined(__APPLE__)
+#   define GLFW_EXPOSE_NATIVE_COCOA
+#endif  // defined(_WIN32) || defined(_WIN64)
+#include <GLFW/glfw3native.h>
+
 #include <optional>
 #include <map>
-
 
 
 struct QueueFamilyIndices
@@ -34,10 +49,11 @@ VulkanManager::VulkanManager() :
     };
 
 
-void VulkanManager::initVulkan()
+void VulkanManager::initVulkan(GLFWwindow* window)
 {
     createVulkanInstance();
     createDebugMessenger();
+    createWindowSurface(window);
     loadPhysicalDevice();
     createLogicalDevice();
 }
@@ -467,6 +483,24 @@ void VulkanManager::createLogicalDevice()
     // but we need a handler to interface with them.
     const uint32_t k_queueIndex = 0;    // since we know that we only have one family...
     vkGetDeviceQueue(m_device, indices.graphicsFamily.value(), k_queueIndex, &m_graphicsQueue);
+}
+
+
+// ----------------------<<  Window Surface  >>-----------------------------
+//
+//  In order for Vulkan to establish a connection with a platform specific
+//  window system, we need to use the Window System Integration (WSL)
+//  extensions.
+//
+// -------------------------------------------------------------------------
+
+void VulkanManager::createWindowSurface(GLFWwindow* window)
+{
+    // Normally, you would create an Vulkan object for surface creation
+    // (eg. VkWin32SurfaceCreateInfoKHR createInfo{} ...)
+    // however, glfw automatically handles this.
+    if (glfwCreateWindowSurface(m_VkInstance, window, nullptr, &m_windowSurface) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create window surface");
 }
 
 
