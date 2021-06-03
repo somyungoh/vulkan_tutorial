@@ -72,6 +72,7 @@ private:
     // << Logical Device >>
     VkDevice                        m_device;
     VkQueue                         m_graphicsQueue;
+    VkQueue                         m_presentationQueue;
 
     // << Window Surface >>
     VkSurfaceKHR                    m_windowSurface;

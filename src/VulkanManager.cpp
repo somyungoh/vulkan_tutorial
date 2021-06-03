@@ -20,8 +20,10 @@
 #endif  // defined(_WIN32) || defined(_WIN64)
 #include <GLFW/glfw3native.h>
 
+// std
 #include <optional>
 #include <map>
+#include <set>
 
 
 struct QueueFamilyIndices
@@ -29,8 +31,9 @@ struct QueueFamilyIndices
     // std::optional - c++17 extension, which contains nothing until
     // something is assigned, and can be checked using has_value()
     std::optional<u_int32_t> graphicsFamily;
+    std::optional<u_int32_t> presentationFamily;
 
-    bool isComplete() { return graphicsFamily.has_value(); };
+    bool isComplete() { return graphicsFamily.has_value() && presentationFamily.has_value(); }
 };
 
 
@@ -412,8 +415,14 @@ QueueFamilyIndices VulkanManager::findQueueFamilies(VkPhysicalDevice device)
     int i = 0;
     for (const auto& queueFamily : queueFamilies)
     {
+        // not all physical device supports presentation support, so we need to query the availability.
+        VkBool32 presentationSupport = false;
+        vkGetPhysicalDeviceSurfaceSupportKHR(device, i, m_windowSurface, &presentationSupport);
+
         if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
             indices.graphicsFamily = i;
+        if (presentationSupport)
+            indices.presentationFamily = i;
         i++;
     }
 
@@ -437,18 +446,27 @@ void VulkanManager::createLogicalDevice()
     // 1. specify the queue to be created
     QueueFamilyIndices indices = findQueueFamilies(m_physicalDevice);
 
-    VkDeviceQueueCreateInfo queueCreateInfo{};
-    queueCreateInfo.sType               = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-    queueCreateInfo.queueFamilyIndex    = indices.graphicsFamily.value();
-    queueCreateInfo.queueCount          = 1;    // why is this only 1? It's because
-    // drivers will allow small number of queues for each queue family,
-    // and we'll create all the command-buffers on multiple threads and
-    // submit them all at once on the main thread, so we just need one per thread.
+    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+    std::set<uint32_t> uniqueQueueFamilies = {
+        indices.graphicsFamily.value(),
+        indices.presentationFamily.value()
+    };
 
     // Priorities are assigned to queues which will later influence the
     // scheduling of command buffer execution. Pretty nice.
     float queuePriority = 1.0f;     // between (0.0 ~ 1.0)
-    queueCreateInfo.pQueuePriorities = &queuePriority;
+    for (uint32_t queueFamily : uniqueQueueFamilies)
+    {
+        VkDeviceQueueCreateInfo queueCreateInfo{};
+        queueCreateInfo.sType               = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        queueCreateInfo.queueFamilyIndex    = queueFamily;
+        queueCreateInfo.queueCount          = 1;    // why is this only 1? It's because
+        // drivers will allow small number of queues for each queue family,
+        // and we'll create all the command-buffers on multiple threads and
+        // submit them all at once on the main thread, so we just need one perthread.
+        queueCreateInfo.pQueuePriorities = &queuePriority;
+        queueCreateInfos.push_back(queueCreateInfo);
+    }
 
     // 2. Specify used device features, the features that we queried previously
     // using 'VkPhysicalDeviceFeatures' (e.g. geometry shaders)
@@ -457,8 +475,8 @@ void VulkanManager::createLogicalDevice()
     // 3. Create the logical device
     VkDeviceCreateInfo deviceCreateInfo{};
     deviceCreateInfo.sType                  = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    deviceCreateInfo.pQueueCreateInfos      = &queueCreateInfo;
-    deviceCreateInfo.queueCreateInfoCount   = 1;
+    deviceCreateInfo.pQueueCreateInfos      = queueCreateInfos.data();
+    deviceCreateInfo.queueCreateInfoCount   = static_cast<uint32_t>(queueCreateInfos.size());
     deviceCreateInfo.pEnabledFeatures       = &deviceFeatures;
 
     // notice that we've already set the extension & validation layers for VkInstance.
@@ -483,6 +501,7 @@ void VulkanManager::createLogicalDevice()
     // but we need a handler to interface with them.
     const uint32_t k_queueIndex = 0;    // since we know that we only have one family...
     vkGetDeviceQueue(m_device, indices.graphicsFamily.value(), k_queueIndex, &m_graphicsQueue);
+    vkGetDeviceQueue(m_device, indices.presentationFamily.value(), k_queueIndex, &m_presentationQueue);
 }
 
 
@@ -515,6 +534,7 @@ void VulkanManager::cleanVulkan()
     // extensions must be destroyed before vulkan instance
     if (enableValidationLayers)
         destroyDebugUtilsMessengerEXT(m_VkInstance, &m_debugMessenger, nullptr);
+    vkDestroySurfaceKHR(m_VkInstance, m_windowSurface, nullptr);
     vkDestroyInstance(m_VkInstance, nullptr);
     vkDestroyDevice(m_device, nullptr);
     
