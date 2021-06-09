@@ -47,7 +47,8 @@ struct QueueFamilyIndices
 VulkanManager::VulkanManager() :
     m_physicalDevice(VK_NULL_HANDLE),
     m_device(VK_NULL_HANDLE),
-    m_validationLayers({ "VK_LAYER_KHRONOS_validation" })
+    m_validationLayers({ "VK_LAYER_KHRONOS_validation" }),
+    m_deviceExtensions({ VK_KHR_SWAPCHAIN_EXTENSION_NAME })
     {
     };
 
@@ -386,7 +387,28 @@ bool VulkanManager::isDeviceSuitable(VkPhysicalDevice device)
 {
     QueueFamilyIndices indices = findQueueFamilies(device);
 
-    return indices.isComplete();
+    bool extensionSupported = checkDeviceExtensionSupport(m_physicalDevice);
+
+    return indices.isComplete() && extensionSupported;
+}
+
+// this will check whether the physical device supports everything
+// that is required, defined in our vector m_deviceExtensions
+bool VulkanManager::checkDeviceExtensionSupport(VkPhysicalDevice device)
+{
+    uint32_t n_extensionCount;
+    vkEnumerateDeviceExtensionProperties(device, nullptr, &n_extensionCount, nullptr);
+
+    std::vector<VkExtensionProperties> availableExtensions(n_extensionCount);
+    vkEnumerateDeviceExtensionProperties(device, nullptr, &n_extensionCount, availableExtensions.data());
+
+    std::set<std::string> requiredExtensions(m_deviceExtensions.begin(), m_deviceExtensions.end());
+
+    // ease out if the device supports our required extensions
+    for (const auto& extension : availableExtensions)
+        requiredExtensions.erase(extension.extensionName);
+
+    return requiredExtensions.empty();
 }
 
 
@@ -474,16 +496,19 @@ void VulkanManager::createLogicalDevice()
 
     // 3. Create the logical device
     VkDeviceCreateInfo deviceCreateInfo{};
-    deviceCreateInfo.sType                  = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    deviceCreateInfo.pQueueCreateInfos      = queueCreateInfos.data();
-    deviceCreateInfo.queueCreateInfoCount   = static_cast<uint32_t>(queueCreateInfos.size());
-    deviceCreateInfo.pEnabledFeatures       = &deviceFeatures;
+    deviceCreateInfo.sType                      = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    deviceCreateInfo.pQueueCreateInfos          = queueCreateInfos.data();
+    deviceCreateInfo.queueCreateInfoCount       = static_cast<uint32_t>(queueCreateInfos.size());
+    deviceCreateInfo.pEnabledFeatures           = &deviceFeatures;
+
+    // device extensions
+    deviceCreateInfo.enabledExtensionCount      = static_cast<uint32_t>(m_deviceExtensions.size());
+    deviceCreateInfo.ppEnabledExtensionNames    = m_deviceExtensions.data();
 
     // notice that we've already set the extension & validation layers for VkInstance.
     // we do the same thing for the physical device, which is actually not necessary
     // because Vulkan will automatically pick the up-to-date info, but it's good to 
     // specify anyways.
-    deviceCreateInfo.enabledExtensionCount = 0;
     if (enableValidationLayers)
     {
         deviceCreateInfo.enabledLayerCount   = static_cast<uint32_t>(m_validationLayers.size());

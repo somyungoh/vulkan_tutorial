@@ -51,6 +51,9 @@ private:
 
     void    createWindowSurface(GLFWwindow*);
 
+    // << Device Extensions >>
+    bool    checkDeviceExtensionSupport(VkPhysicalDevice);
+
     void    cleanVulkan();
 
 
@@ -76,4 +79,7 @@ private:
 
     // << Window Surface >>
     VkSurfaceKHR                    m_windowSurface;
+
+    // << Device Extensions >>
+    const std::vector<const char*>  m_deviceExtensions;
 };
