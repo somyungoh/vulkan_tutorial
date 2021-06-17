@@ -19,6 +19,7 @@ private:
     void    initGLFW();
     void    initVulkanManager();
     void    mainLoop();
+    void    cleanVulkanManager();
     void    cleanup();
 
     // GLFW Window

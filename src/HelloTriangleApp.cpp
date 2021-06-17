@@ -54,6 +54,7 @@ void HelloTriangleApp::initGLFW()
 
 void HelloTriangleApp::initVulkanManager()
 {
+    m_VulkanManager = new VulkanManager();
     m_VulkanManager->initVulkan(m_Window);
 }
 
@@ -66,8 +67,15 @@ void HelloTriangleApp::mainLoop()
     }
 }
 
+void HelloTriangleApp::cleanVulkanManager()
+{
+    m_VulkanManager->cleanVulkan();
+    delete m_VulkanManager;
+}
+
 void HelloTriangleApp::cleanup()
 {
+    cleanVulkanManager();
     glfwDestroyWindow(m_Window);
     glfwTerminate();
 }
