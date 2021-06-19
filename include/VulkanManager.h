@@ -5,6 +5,7 @@
 #include <vector>
 
 struct QueueFamilyIndices;
+struct SwapchainSupportDetails;
 struct GLFWwindow;
 
 class VulkanManager
@@ -13,6 +14,8 @@ public:
     VulkanManager();
 
     void    initVulkan(GLFWwindow*);
+    void    cleanVulkan();
+
 
 private:
     void                        createVulkanInstance();
@@ -54,8 +57,8 @@ private:
     // << Device Extensions >>
     bool    checkDeviceExtensionSupport(VkPhysicalDevice);
 
-    void    cleanVulkan();
-
+    // << Swap Chain >>
+    SwapchainSupportDetails querySwapChainSupport(VkPhysicalDevice);
 
 
     // << Vulkan Instance >> connects between the application and the Vulkan library.

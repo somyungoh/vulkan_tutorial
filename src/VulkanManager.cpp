@@ -36,6 +36,13 @@ struct QueueFamilyIndices
     bool isComplete() { return graphicsFamily.has_value() && presentationFamily.has_value(); }
 };
 
+struct SwapchainSupportDetails
+{
+   VkSurfaceCapabilitiesKHR surfaceCapabilities;
+   std::vector<VkSurfaceFormatKHR> formats;
+   std::vector<VkPresentModeKHR> presentModes;
+};
+
 
 // -------------------<<  Bonjour Vulkan!  >>------------------------
 //
@@ -385,11 +392,20 @@ u_int32_t VulkanManager::rateDeviceSuitability(VkPhysicalDevice device)
 
 bool VulkanManager::isDeviceSuitable(VkPhysicalDevice device)
 {
-    QueueFamilyIndices indices = findQueueFamilies(device);
+    // queue family
+    QueueFamilyIndices indices  = findQueueFamilies(device);
 
-    bool extensionSupported = checkDeviceExtensionSupport(m_physicalDevice);
+    // extension: swapchain support
+    bool extensionSupported     = checkDeviceExtensionSupport(device);
+    bool swapchainAdequate      = false;
+    if (extensionSupported)
+    {
+        SwapchainSupportDetails swapchainDetails = querySwapChainSupport(device);
+        swapchainAdequate = !swapchainDetails.formats.empty() &&
+                            !swapchainDetails.presentModes.empty();
+    }
 
-    return indices.isComplete() && extensionSupported;
+    return indices.isComplete() && extensionSupported && swapchainAdequate;
 }
 
 // this will check whether the physical device supports everything
@@ -548,7 +564,44 @@ void VulkanManager::createWindowSurface(GLFWwindow* window)
 }
 
 
-// --------------------------<<  Exit  >>---------------------------
+// -------------------<<  Swap Chain Support  >>-----------------------
+//
+//  Simply checking whether swapchain is available from the device is
+//  not sufficient. Creating a swapchain involves a lot of configuration
+//  therefore needs many queries.
+//
+// --------------------------------------------------------------------
+
+SwapchainSupportDetails VulkanManager::querySwapChainSupport(VkPhysicalDevice device)
+{
+    SwapchainSupportDetails details;
+
+    // 1. Surface capabilities
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, m_windowSurface, &details.surfaceCapabilities);
+
+    // 2. Surface formats
+    uint32_t n_formatCount;
+    vkGetPhysicalDeviceSurfaceFormatsKHR(device, m_windowSurface, &n_formatCount, nullptr);
+    if (n_formatCount != 0)
+    {
+        details.formats.resize(n_formatCount);
+        vkGetPhysicalDeviceSurfaceFormatsKHR(device, m_windowSurface, &n_formatCount, details.formats.data());
+    }
+
+    // 3. Presentation modes
+    uint32_t n_presentationModeCount;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(device, m_windowSurface, &n_presentationModeCount, nullptr);
+    if (n_presentationModeCount != 0)
+    {
+        details.presentModes.resize(n_presentationModeCount);
+        vkGetPhysicalDeviceSurfacePresentModesKHR(device, m_windowSurface, &n_presentationModeCount, details.presentModes.data());
+    }
+
+    return details;
+}
+
+
+// --------------------------<<  Exit  >>----------------------------
 //
 //  VkPhysicalDevice - automatically handled
 //
@@ -559,9 +612,9 @@ void VulkanManager::cleanVulkan()
     // extensions must be destroyed before vulkan instance
     if (enableValidationLayers)
         destroyDebugUtilsMessengerEXT(m_VkInstance, &m_debugMessenger, nullptr);
+    vkDestroyDevice(m_device, nullptr);
     vkDestroySurfaceKHR(m_VkInstance, m_windowSurface, nullptr);
     vkDestroyInstance(m_VkInstance, nullptr);
-    vkDestroyDevice(m_device, nullptr);
     
-    PRINTLN("Successfully cleaning up Vulkan...");
+    PRINTLN("Successfully cleaned up Vulkan...");
 }
