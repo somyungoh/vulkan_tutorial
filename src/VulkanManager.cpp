@@ -62,11 +62,23 @@ VulkanManager::VulkanManager() :
 
 void VulkanManager::initVulkan(GLFWwindow* window)
 {
-    createVulkanInstance();
-    createDebugMessenger();
-    createWindowSurface(window);
-    loadPhysicalDevice();
-    createLogicalDevice();
+    PRINT_BAR_LINE();
+    PRINTLN("Start initializing vulkan manager.");
+
+    bool result = true;
+
+    result &= createVulkanInstance();
+    result &= createDebugMessenger();
+    result &= createWindowSurface(window);
+    result &= loadPhysicalDevice();
+    result &= createLogicalDevice();
+
+    PRINT_BAR_DOTS();
+    if (result)
+        PRINTLN("Vulkan Manager initialization finished successfully");
+    else
+        PRINTLN("Vulkan Manager initialization finished with errors");
+    PRINT_BAR_LINE();
 }
 
 
@@ -77,11 +89,13 @@ void VulkanManager::initVulkan(GLFWwindow* window)
 //
 // ------------------------------------------------------------------
 
-void VulkanManager::createVulkanInstance()
+bool VulkanManager::createVulkanInstance()
 {
     // in vulkan, in many cases, data is passed through different structs
     // instead of function parameters. Each vulkan struct requires to specify
     // the type into the member 'sType'.
+
+    PRINT_BAR_DOTS();
 
     // struct: application information
     VkApplicationInfo vkAppInfo{};
@@ -110,7 +124,6 @@ void VulkanManager::createVulkanInstance()
     }
     else
         vkCreateInfo.enabledLayerCount      = 0;
-    PRINT_BAR();
 #if 1
     // optional) available extension check
     uint32_t n_ExtensionCount = 0;
@@ -121,7 +134,7 @@ void VulkanManager::createVulkanInstance()
     // print vulkan ext.
     PRINTLN_VERBOSE("Available Vulkan Extensions:");
     for (const auto& extension : vk_extensions)
-        PRINTLN("\t" << extension.extensionName);
+        PRINTLN_VERBOSE("\t" << extension.extensionName);
     // print glfw ext.
 #endif
 
@@ -135,10 +148,11 @@ void VulkanManager::createVulkanInstance()
     if (result != VK_SUCCESS)
     {
         PRINTLN("Failed to create Vulkan Instance");
-        return;
+        return false;
     }
 
-    PRINTLN_VERBOSE("Successfully created Vulkan Instance");
+    PRINTLN("Created Vulkan Instance");
+    return true;
 }
 
 
@@ -176,12 +190,14 @@ bool VulkanManager::checkValidationLayerSupport()
             if (strcmp(layer, layerProperties.layerName) == 0)
             {
                 isLayerFound = true;
-                std::cout << "Requested Validation Layer found: " << layer << std::endl;
+                PRINTLN("Requested Validation Layer found: " << layer);
                 break;
             }
         }
-        if (!isLayerFound)
+        if (!isLayerFound){
+            PRINTLN("Requested Validation Layer not found: " << layer);
             return false;
+        }
     }
 
     return true;
@@ -215,11 +231,12 @@ std::vector<const char*> VulkanManager::loadVKExtensions()
 
 // Look at https://www.khronos.org/registry/vulkan/specs/1.1-extensions/html/vkspec.html#VK_EXT_debug_utils
 // for much more different ways to setup debug messenger.
-void VulkanManager::createDebugMessenger()
+bool VulkanManager::createDebugMessenger()
 {
-    if (!enableValidationLayers) return;
+    if (!enableValidationLayers)
+        return true;
 
-    PRINT_BAR();
+    PRINT_BAR_DOTS();
 
     VkDebugUtilsMessengerCreateInfoEXT createInfo {};
     createInfo.sType            = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
@@ -234,11 +251,15 @@ void VulkanManager::createDebugMessenger()
     createInfo.pUserData        = nullptr;
 
     // create messenger via vkCreateDebugUtilsMessengerEXT
-    if (createDebugUtilsMessengerEXT(m_VkInstance, &createInfo, nullptr, &m_debugMessenger)
-        != VK_SUCCESS)
+    if (createDebugUtilsMessengerEXT(m_VkInstance, &createInfo, nullptr, &m_debugMessenger) != VK_SUCCESS)
+    {
         throw std::runtime_error("Failed set up debug messenger!");
+        return false;
+    }
     else
-        std::cout << "Successfully created Debug Messenger." << std::endl;
+        PRINTLN_VERBOSE("Successfully created Debug Messenger");
+
+    return true;
 }
 
 // As <vkCreateDebugUtilsMessengerEXT> is a extension, it's not automatically
@@ -282,23 +303,23 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanManager::debugCallback(
     void*                                           pUserData)
 {
     // Message severity level ( msgSeverity )
-    std::cerr << "Validation Layer|";
+    PRINT("Validation Layer|");
     if (msgSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
-        std::cerr << "ERROR|";
+        PRINT("ERROR|");
     else if (msgSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
-        std::cerr << "WARNING|";
+        PRINT("WARNING|");
     else if (msgSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)
-        std::cerr << "INFO|";
+        PRINT("INFO|");
     else if (msgSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT)
-        std::cerr << "VERBOSE|";
+        PRINT("VERBOSE|");
 
     // Message type ( msgType )
     if (msgType == VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)  // spec. voilation / mistakes
-        std::cerr << "VALIDATION|";
+        PRINT("VALIDATION|");
     else if (msgType == VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)  // non-optimal use of vulkan
-        std::cerr << "PERFORMANCE|";
+        PRINT("PERFORMANCE|");
     else if (msgType == VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT)    // non above
-        std::cerr << "GENERAL|";
+        PRINT("GENERAL|");
 
     // Message itself (pCallbackData->pMessage)
     PRINTLN(pCallbackData->pMessage);
@@ -318,9 +339,9 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanManager::debugCallback(
 //
 // ------------------------------------------------------------------
 
-void VulkanManager::loadPhysicalDevice()
+bool VulkanManager::loadPhysicalDevice()
 {
-    PRINT_BAR();
+    PRINT_BAR_DOTS();
 
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(m_VkInstance, &deviceCount, nullptr);
@@ -334,8 +355,6 @@ void VulkanManager::loadPhysicalDevice()
     std::multimap<int, VkPhysicalDevice> candidates;
 
     // score each available devices to pick a best one
-    PRINTLN_VERBOSE("Starting to score available GPUs...");
-
     for (const auto& device : devices)
     {
         uint32_t score = rateDeviceSuitability(device);
@@ -345,13 +364,19 @@ void VulkanManager::loadPhysicalDevice()
     if (candidates.rbegin()->first > 0 && isDeviceSuitable(candidates.rbegin()->second))
         m_physicalDevice = candidates.rbegin()->second;
     else if (m_physicalDevice == VK_NULL_HANDLE)
+    {
         throw std::runtime_error("Failed to find a suitable GPU!");
+        return false;
+    }
+
+    VkPhysicalDeviceProperties  deviceProperties;
+    vkGetPhysicalDeviceProperties(m_physicalDevice, &deviceProperties);
+    PRINTLN("Loaded physical device - " << deviceProperties.deviceName);
+    return true;
 }
 
 u_int32_t VulkanManager::rateDeviceSuitability(VkPhysicalDevice device)
 {
-    PRINT_BAR();
-
     // Here, these queries gives much more information than just the
     // GPU information (texture compression, multi-viewport rendering)
     VkPhysicalDeviceProperties  deviceProperties;
@@ -360,8 +385,8 @@ u_int32_t VulkanManager::rateDeviceSuitability(VkPhysicalDevice device)
     vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
 
     // GPU Details
-    PRINTLN_VERBOSE("GPU Name: " << deviceProperties.deviceName);
-    PRINTLN_VERBOSE("Scoring:");
+    PRINTLN("GPU Name: " << deviceProperties.deviceName);
+    PRINTLN("Scoring:");
 
     u_int32_t score = 0;
 
@@ -369,23 +394,23 @@ u_int32_t VulkanManager::rateDeviceSuitability(VkPhysicalDevice device)
     if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
     {
         score += 100;   // no idea how the scale should be...
-        PRINTLN_VERBOSE("\tDiscrete GPU - score 100");
+        PRINTLN("\tDiscrete GPU - score 100");
     }
     else
-        PRINTLN_VERBOSE("\tNot a Discrete GPU - score 0");
+        PRINTLN("\tNot a Discrete GPU - score 0");
 
     // Criteria 2) Maximum texture size
     score += deviceProperties.limits.maxImageDimension2D;
-    PRINTLN_VERBOSE("\tMax 2D texture dimension: " << deviceProperties.limits.maxImageDimension2D);
+    PRINTLN("\tMax 2D texture dimension: " << deviceProperties.limits.maxImageDimension2D);
 
     // Criteria 3) Geometry shaders
     if (!deviceFeatures.geometryShader)
     {
         score -= 100;   // lol.
-        PRINTLN_VERBOSE("\tGeometry Shader not available, minus score 100...");
+        PRINTLN("\tGeometry Shader not available, minus score 100...");
     }
 
-    PRINTLN_VERBOSE("\tThe final score is: " << score);
+    PRINTLN("Final score: " << score);
 
     return score;
 }
@@ -400,9 +425,12 @@ bool VulkanManager::isDeviceSuitable(VkPhysicalDevice device)
     bool swapchainAdequate      = false;
     if (extensionSupported)
     {
+        // swap chain
         SwapchainSupportDetails swapchainDetails = querySwapChainSupport(device);
         swapchainAdequate = !swapchainDetails.formats.empty() &&
                             !swapchainDetails.presentModes.empty();
+        if (swapchainAdequate)
+            PRINTLN("Extension) Swapchain supported for this device");
     }
 
     return indices.isComplete() && extensionSupported && swapchainAdequate;
@@ -422,8 +450,10 @@ bool VulkanManager::checkDeviceExtensionSupport(VkPhysicalDevice device)
 
     // ease out if the device supports our required extensions
     for (const auto& extension : availableExtensions)
-        requiredExtensions.erase(extension.extensionName);
-
+    {
+        if (requiredExtensions.erase(extension.extensionName))
+            PRINTLN("Extension) Required extension \"" << extension.extensionName << "\" supported.");
+    }
     return requiredExtensions.empty();
 }
 
@@ -439,8 +469,6 @@ bool VulkanManager::checkDeviceExtensionSupport(VkPhysicalDevice device)
 
 QueueFamilyIndices VulkanManager::findQueueFamilies(VkPhysicalDevice device)
 {
-    PRINT_BAR();
-
     QueueFamilyIndices indices;
 
     u_int32_t n_queueFamily;
@@ -465,7 +493,10 @@ QueueFamilyIndices VulkanManager::findQueueFamilies(VkPhysicalDevice device)
     }
 
     if (indices.isComplete())
-        PRINTLN_VERBOSE("Graphics Queue family indices: " << indices.graphicsFamily.value());
+    {
+        PRINTLN("Queue Family) Graphics QF available: index " << indices.graphicsFamily.value());
+        PRINTLN("Queue Family) Presentation QF available: index " << indices.presentationFamily.value());
+    }
 
     return indices;
 }
@@ -479,8 +510,10 @@ QueueFamilyIndices VulkanManager::findQueueFamilies(VkPhysicalDevice device)
 //
 // -------------------------------------------------------------------------
 
-void VulkanManager::createLogicalDevice()
+bool VulkanManager::createLogicalDevice()
 {
+    PRINT_BAR_DOTS();
+
     // 1. specify the queue to be created
     QueueFamilyIndices indices = findQueueFamilies(m_physicalDevice);
 
@@ -535,7 +568,10 @@ void VulkanManager::createLogicalDevice()
 
     // 4. Instantiate logical device!
     if (vkCreateDevice(m_physicalDevice, &deviceCreateInfo, nullptr, &m_device) != VK_SUCCESS)
+    {
         throw std::runtime_error("Failed to create Vulkan logical device");
+        return false;
+    }
 
     // 5. Retrieve queue handles (here, graphics queue)
     // Normally, the queues are automatically created along with the logical device,
@@ -543,6 +579,9 @@ void VulkanManager::createLogicalDevice()
     const uint32_t k_queueIndex = 0;    // since we know that we only have one family...
     vkGetDeviceQueue(m_device, indices.graphicsFamily.value(), k_queueIndex, &m_graphicsQueue);
     vkGetDeviceQueue(m_device, indices.presentationFamily.value(), k_queueIndex, &m_presentationQueue);
+
+    PRINTLN("Created logical device");
+    return true;
 }
 
 
@@ -554,13 +593,22 @@ void VulkanManager::createLogicalDevice()
 //
 // -------------------------------------------------------------------------
 
-void VulkanManager::createWindowSurface(GLFWwindow* window)
+bool VulkanManager::createWindowSurface(GLFWwindow* window)
 {
     // Normally, you would create an Vulkan object for surface creation
     // (eg. VkWin32SurfaceCreateInfoKHR createInfo{} ...)
     // however, glfw automatically handles this.
+
+    PRINT_BAR_DOTS();
+
     if (glfwCreateWindowSurface(m_VkInstance, window, nullptr, &m_windowSurface) != VK_SUCCESS)
+    {
         throw std::runtime_error("Failed to create window surface");
+        return false;
+    }
+
+    PRINTLN("Created Vulkan window surface");
+    return true;
 }
 
 
@@ -616,5 +664,5 @@ void VulkanManager::cleanVulkan()
     vkDestroySurfaceKHR(m_VkInstance, m_windowSurface, nullptr);
     vkDestroyInstance(m_VkInstance, nullptr);
     
-    PRINTLN("Successfully cleaned up Vulkan...");
+    PRINTLN("Cleaned up Vulkan");
 }

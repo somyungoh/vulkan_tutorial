@@ -18,9 +18,9 @@ public:
 
 
 private:
-    void                        createVulkanInstance();
+    bool                        createVulkanInstance();
 
-    void                        createDebugMessenger();
+    bool                        createDebugMessenger();
     bool                        checkValidationLayerSupport();
     std::vector<const char*>    loadVKExtensions();
 
@@ -43,16 +43,16 @@ private:
         const VkAllocationCallbacks*
     );
 
-    void        loadPhysicalDevice();
+    bool        loadPhysicalDevice();
     u_int32_t   rateDeviceSuitability(VkPhysicalDevice);
     bool        isDeviceSuitable(VkPhysicalDevice);
 
     // << Queue Family >> subset of vulkan commands
     QueueFamilyIndices    findQueueFamilies(VkPhysicalDevice);
 
-    void    createLogicalDevice();
+    bool    createLogicalDevice();
 
-    void    createWindowSurface(GLFWwindow*);
+    bool    createWindowSurface(GLFWwindow*);
 
     // << Device Extensions >>
     bool    checkDeviceExtensionSupport(VkPhysicalDevice);

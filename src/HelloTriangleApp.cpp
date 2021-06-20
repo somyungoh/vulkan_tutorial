@@ -1,5 +1,6 @@
 #include "HelloTriangleApp.h"
 #include "VulkanManager.h"
+#include "Common.h"
 
 #include <iostream>
 #include <cstring>
@@ -29,9 +30,11 @@ void HelloTriangleApp::run()
 // initialize GLFW
 void HelloTriangleApp::initGLFW()
 {
+    PRINT_BAR_LINE();
+
     if (!glfwInit())
     {
-        std::cout << "failed to initialze GLFW" << std::endl;
+        PRINTLN("failed to initialze GLFW");
         return;
     }
 
@@ -45,11 +48,11 @@ void HelloTriangleApp::initGLFW()
 
     if (!m_Window)
     {
-        std::cout << "Failed to initialize GLFW window" << std::endl;
+        PRINTLN("Failed to initialize GLFW window");
         return;
     }
     else
-        std::cout << "Successfully initialized GLFW window" << std::endl;
+        PRINTLN("Successfully initialized GLFW window");
 }
 
 void HelloTriangleApp::initVulkanManager()
