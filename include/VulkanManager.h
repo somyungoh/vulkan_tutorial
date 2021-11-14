@@ -58,7 +58,11 @@ private:
     bool    checkDeviceExtensionSupport(VkPhysicalDevice);
 
     // << Swap Chain >>
+    bool                    createSwapChain(GLFWwindow*);
     SwapchainSupportDetails querySwapChainSupport(VkPhysicalDevice);
+    VkSurfaceFormatKHR      chooseSurfaceFormat(const std::vector<VkSurfaceFormatKHR>&);
+    VkPresentModeKHR        choosePresentMode(const std::vector<VkPresentModeKHR>&);
+    VkExtent2D              chooseExtent2D(GLFWwindow*, const VkSurfaceCapabilitiesKHR&);
 
 
     // << Vulkan Instance >> connects between the application and the Vulkan library.
@@ -85,4 +89,11 @@ private:
 
     // << Device Extensions >>
     const std::vector<const char*>  m_deviceExtensions;
+
+    // << Swap Chain >>
+    VkSwapchainKHR                  m_swapchain;
+    std::vector<VkImage>            m_swapchainImages;
+    VkFormat                        m_swapchainImageFormat;
+    VkExtent2D                      m_swapchainExtent;
+
 };
