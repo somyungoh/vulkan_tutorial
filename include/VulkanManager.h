@@ -64,6 +64,9 @@ private:
     VkPresentModeKHR        choosePresentMode(const std::vector<VkPresentModeKHR>&);
     VkExtent2D              chooseExtent2D(GLFWwindow*, const VkSurfaceCapabilitiesKHR&);
 
+    // << Image Views >>
+    std::vector<VkImageView>    m_swapchainImageViews;
+    bool                        createImageViews();
 
     // << Vulkan Instance >> connects between the application and the Vulkan library.
     VkInstance                      m_VkInstance;

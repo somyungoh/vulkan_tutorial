@@ -75,10 +75,11 @@ void VulkanManager::initVulkan(GLFWwindow* window)
     result &= loadPhysicalDevice();
     result &= createLogicalDevice();
     result &= createSwapChain(window);
+    result &= createImageViews();
 
     PRINT_BAR_DOTS();
     if (result)
-        PRINTLN("Vulkan Manager initialization finished successfully");
+        PRINTLN("Successfully initialized Vulkan Manager");
     else
         PRINTLN("Vulkan Manager initialization finished with errors");
     PRINT_BAR_LINE();
@@ -816,6 +817,59 @@ VkExtent2D VulkanManager::chooseExtent2D(GLFWwindow* window, const VkSurfaceCapa
 }
 
 
+// -----------------------<<  Image Views  >>------------------------
+//
+//  Using VkImage requires VkImageView, which is literally a "view"
+//  into the image. It describes how & which part of the image to
+//  access (i.e. 2D Depth Texture, no mipmap levels?)
+//
+// ------------------------------------------------------------------
+
+bool VulkanManager::createImageViews()
+{
+    // 1. resize the array into the size of our needs. As of now,
+    // the only VkImage we have is in the swapchain.
+    m_swapchainImageViews.resize(m_swapchainImages.size());
+
+    for (int i = 0; i < m_swapchainImageViews.size(); i++)
+    {
+        // initialize each slots
+        VkImageViewCreateInfo imageViewCreateInfo{};
+        imageViewCreateInfo.sType       = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        imageViewCreateInfo.image       = m_swapchainImages[i];
+        imageViewCreateInfo.viewType    = VK_IMAGE_VIEW_TYPE_2D;
+        imageViewCreateInfo.format      = m_swapchainImageFormat;
+        // [components] field allows to swizzle the color channels (i.e. map
+        // all colors to the red channel), but we stick to the default.
+        imageViewCreateInfo.components.r    = VK_COMPONENT_SWIZZLE_IDENTITY;
+        imageViewCreateInfo.components.g    = VK_COMPONENT_SWIZZLE_IDENTITY;
+        imageViewCreateInfo.components.b    = VK_COMPONENT_SWIZZLE_IDENTITY;
+        imageViewCreateInfo.components.a    = VK_COMPONENT_SWIZZLE_IDENTITY;
+        // [subresourceRange] field defines the image's purpose and which
+        // part of the image is accessed.
+        imageViewCreateInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;    // used as color targets
+        imageViewCreateInfo.subresourceRange.baseMipLevel   = 0;    // no mipmaps
+        imageViewCreateInfo.subresourceRange.levelCount     = 1;
+        imageViewCreateInfo.subresourceRange.baseArrayLayer = 0;
+        imageViewCreateInfo.subresourceRange.layerCount     = 1;
+
+        // create image view
+        VkResult result = vkCreateImageView(m_device,
+                                            &imageViewCreateInfo,
+                                            nullptr,
+                                            &m_swapchainImageViews[i]);
+        if (result != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to create image views!");
+            return false;
+        }
+    }
+
+    PRINTLN("Created image views");
+    return true;
+}
+
+
 // --------------------------<<  Exit  >>----------------------------
 //
 //  VkPhysicalDevice - automatically handled
@@ -827,6 +881,8 @@ void VulkanManager::cleanVulkan()
     // extensions must be destroyed before vulkan instance
     if (enableValidationLayers)
         destroyDebugUtilsMessengerEXT(m_VkInstance, &m_debugMessenger, nullptr);
+    for (auto imageView : m_swapchainImageViews)
+        vkDestroyImageView(m_device, imageView, nullptr);
     // swapchain is no exception
     vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
     vkDestroyDevice(m_device, nullptr);
