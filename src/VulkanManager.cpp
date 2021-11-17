@@ -71,11 +71,15 @@ void VulkanManager::initVulkan(GLFWwindow* window)
 
     result &= createVulkanInstance();
     result &= createDebugMessenger();
+
     result &= createWindowSurface(window);
     result &= loadPhysicalDevice();
     result &= createLogicalDevice();
+
     result &= createSwapChain(window);
     result &= createImageViews();
+
+    result &= createGraphicsPipeline();
 
     PRINT_BAR_DOTS();
     if (result)
@@ -868,6 +872,25 @@ bool VulkanManager::createImageViews()
     PRINTLN("Created image views");
     return true;
 }
+
+// ----------------------<<  Graphics Pipepline  >>--------------------------
+//
+//  Graphics Pipeline: from vertex/textures to pixels in the Render Targets.
+//  - Input Assembler) collect raw vertex data from the buffer
+//  - Vertex Shader) model - view transformtation for all vertices
+//  - Tesselation) geometry subdivision for a better rendering quality
+//  - Geometry Shader) primitive (point,line,triangle) drop/copy
+//      * normally does not have good performance on external GPUs
+//  - Rasterization) primitives to fragments(pixels), filled in frame buffers
+//  - Fragment Shader) determine final colors of each frame buffers
+//  - Color Blending) mixing different frame buffers
+//
+// --------------------------------------------------------------------------
+
+bool VulkanManager::createGraphicsPipeline()
+{
+    return true;
+};
 
 
 // --------------------------<<  Exit  >>----------------------------

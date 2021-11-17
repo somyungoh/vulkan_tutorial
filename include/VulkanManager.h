@@ -65,9 +65,12 @@ private:
     VkExtent2D              chooseExtent2D(GLFWwindow*, const VkSurfaceCapabilitiesKHR&);
 
     // << Image Views >>
-    std::vector<VkImageView>    m_swapchainImageViews;
-    bool                        createImageViews();
+    bool createImageViews();
 
+    // << Graphics Pipeline >>
+    bool createGraphicsPipeline();
+
+private:
     // << Vulkan Instance >> connects between the application and the Vulkan library.
     VkInstance                      m_VkInstance;
     // << Validation Layers >> custom error-checking method
@@ -99,4 +102,6 @@ private:
     VkFormat                        m_swapchainImageFormat;
     VkExtent2D                      m_swapchainExtent;
 
+    // << Image Views >>
+    std::vector<VkImageView>    m_swapchainImageViews;
 };
