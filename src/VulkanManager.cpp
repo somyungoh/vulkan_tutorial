@@ -26,6 +26,7 @@
 #include <set>
 #include <cstdint>  // UINT32_MAX
 #include <algorithm>    // std::min, std::max
+#include <fstream>
 
 
 struct QueueFamilyIndices
@@ -44,6 +45,28 @@ struct SwapchainSupportDetails
    std::vector<VkSurfaceFormatKHR> formats;
    std::vector<VkPresentModeKHR> presentModes;
 };
+
+static std::vector<char> readFile(const std::string& filename)
+{
+    // ate: start reading at the end, binary: read as binary file
+    std::ifstream file(filename, std::ios::ate | std::ios::binary);
+    PRINTLN("open file - " + filename);
+
+    if (!file.is_open())
+        throw std::runtime_error("failed to open file - " + filename + "");
+
+    // as we read at the end, we can instantly determine the size of the file'
+    size_t filesize = (size_t) file.tellg();
+    std::vector<char> buffer(filesize);
+
+    // go back to the beginning and read all at once
+    file.seekg(0);
+    file.read(buffer.data(), filesize);
+
+    file.close();
+
+    return buffer;
+}
 
 
 // -------------------<<  Bonjour Vulkan!  >>------------------------
@@ -831,6 +854,8 @@ VkExtent2D VulkanManager::chooseExtent2D(GLFWwindow* window, const VkSurfaceCapa
 
 bool VulkanManager::createImageViews()
 {
+    PRINT_BAR_DOTS();
+
     // 1. resize the array into the size of our needs. As of now,
     // the only VkImage we have is in the swapchain.
     m_swapchainImageViews.resize(m_swapchainImages.size());
@@ -869,7 +894,7 @@ bool VulkanManager::createImageViews()
         }
     }
 
-    PRINTLN("Created image views");
+    PRINTLN("Created Image Views");
     return true;
 }
 
@@ -889,8 +914,64 @@ bool VulkanManager::createImageViews()
 
 bool VulkanManager::createGraphicsPipeline()
 {
+    PRINT_BAR_DOTS();
+    PRINTLN("Create Graphics Pipeline");
+
+    // 1. Load shaders
+    auto vertShader = readFile("../src/shaders/vert.spv");
+    auto fragShader = readFile("../src/shaders/frag.spv");
+
+    // 2. Create shader moduless
+    VkShaderModule vertShaderModule = createShaderModule(vertShader);
+    VkShaderModule fragShaderModule = createShaderModule(fragShader);
+
+    // 3. Stage shaders into the pipeline stage
+    VkPipelineShaderStageCreateInfo vertShaderStageCreateInfo{};
+    vertShaderStageCreateInfo.sType     = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertShaderStageCreateInfo.stage     = VK_SHADER_STAGE_VERTEX_BIT;   // vertex shader
+    vertShaderStageCreateInfo.module    = vertShaderModule;
+    vertShaderStageCreateInfo.pName     = "main";   // entry point
+    // not using in this code, but we can also pass optional "SpecializationInfo"
+    // specifying different shader constant values. using this is faster than using
+    // shader variables in runtime, becuase the compiler can elimitate (e.g. using if)
+    // stuff at compile time.
+    // vertShaderStageCreateInfo.pSpecializationInfo = // Shader Constants
+    VkPipelineShaderStageCreateInfo fragShaderStageCreateInfo{};
+    fragShaderStageCreateInfo.sType     = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fragShaderStageCreateInfo.stage     = VK_SHADER_STAGE_FRAGMENT_BIT;   // fragment shader
+    fragShaderStageCreateInfo.module    = fragShaderModule;
+    fragShaderStageCreateInfo.pName     = "main";   // entry point
+
+    VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageCreateInfo, fragShaderStageCreateInfo};
+
+
+    // shader module cleanup
+    vkDestroyShaderModule(m_device, vertShaderModule, nullptr);
+    vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
+
     return true;
 };
+
+VkShaderModule VulkanManager::createShaderModule(const std::vector<char> &code)
+{
+    // this method creates vulkan shader module from the shader byte code
+
+    VkShaderModuleCreateInfo shaderModuleCreateInfo{};
+    shaderModuleCreateInfo.sType        = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    shaderModuleCreateInfo.codeSize     = code.size();
+    // the only thing we need to for ShaderModule is to specify a pointer to the
+    // shader byte code buffer. We stored the byte code in char however the pointer
+    // type is u_int32_t*, so we need to type cast. Normally you need to be careful
+    // with the data alignment but in our case std::vetcor does the job already.
+    shaderModuleCreateInfo.pCode        = reinterpret_cast<const u_int32_t*>(code.data());
+
+    VkShaderModule shaderModule;
+    if (vkCreateShaderModule(m_device, &shaderModuleCreateInfo, nullptr, &shaderModule)
+        != VK_SUCCESS)
+        throw std::runtime_error("failed to create shader module!");
+
+    return shaderModule;
+}
 
 
 // --------------------------<<  Exit  >>----------------------------

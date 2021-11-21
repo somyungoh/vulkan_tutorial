@@ -68,7 +68,8 @@ private:
     bool createImageViews();
 
     // << Graphics Pipeline >>
-    bool createGraphicsPipeline();
+    bool            createGraphicsPipeline();
+    VkShaderModule  createShaderModule(const std::vector<char>&);
 
 private:
     // << Vulkan Instance >> connects between the application and the Vulkan library.
