@@ -1,3 +1,10 @@
-build/
+# macosx specific files
 **.dSYM
 .DS_Store
+
+# make build directory
+build/
+
+# compiled objects
+*.spv
+
