@@ -945,6 +945,40 @@ bool VulkanManager::createGraphicsPipeline()
     VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageCreateInfo, fragShaderStageCreateInfo};
 
 
+    // 4. Fixed Functions
+    //    usually these were set with default values in other GraphicsAPI, but not for Vulkan, so...
+
+    // 4.1 Vertex input
+    // we hard-coded these in the shader, so we'll leave 'none' for now
+    VkPipelineVertexInputStateCreateInfo vertexInputStateCreateInfo{};
+    vertexInputStateCreateInfo.sType                            = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInputStateCreateInfo.vertexBindingDescriptionCount    = 0;
+    vertexInputStateCreateInfo.pVertexBindingDescriptions       = nullptr;
+    vertexInputStateCreateInfo.vertexBindingDescriptionCount    = 0;
+    vertexInputStateCreateInfo.pVertexAttributeDescriptions     = nullptr;
+
+    // 4.2 Input Aseembly
+    VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCreateInfo{};
+    inputAssemblyStateCreateInfo.sType                      = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssemblyStateCreateInfo.topology                   = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;    // topology (point, line... *_LIST: vertex is reused)
+    inputAssemblyStateCreateInfo.primitiveRestartEnable     = VK_FALSE;     // setting this to true + using _STRIP topology allows you to break up lines & triangles
+
+    // 4.3 Viewport
+    // the region of the framebuffer that will be rendered out. Almost always (0,0) ~ (width, height)
+    VkViewport viewport{};
+    viewport.x          = 0.0f;
+    viewport.y          = 0.0f;
+    viewport.width      = (float) m_swapchainExtent.width;
+    viewport.height     = (float) m_swapchainExtent.height;
+    viewport.minDepth   = 0.0f; // range of depth value in the framebuffer.
+    viewport.maxDepth   = 1.0f; // always within (0,1), but min value can be greater than max
+
+    // 4.4 Scissors
+    // define in which regions of pixels will be rendered, then it will be discarded by the rasterizer
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};    // cover from the beginning
+    scissor.extent = m_swapchainExtent; // to full size of the swapchain
+
     // shader module cleanup
     vkDestroyShaderModule(m_device, vertShaderModule, nullptr);
     vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
