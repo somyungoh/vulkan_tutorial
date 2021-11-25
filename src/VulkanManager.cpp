@@ -898,6 +898,7 @@ bool VulkanManager::createImageViews()
     return true;
 }
 
+
 // ----------------------<<  Graphics Pipepline  >>--------------------------
 //
 //  Graphics Pipeline: from vertex/textures to pixels in the Render Targets.
@@ -1031,7 +1032,7 @@ bool VulkanManager::createGraphicsPipeline()
     // that you can use it as a blend factors.
     VkPipelineColorBlendStateCreateInfo colorblendStateCreateInfo{};
     colorblendStateCreateInfo.sType             = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorblendStateCreateInfo.logicOpEnable     = VK_FALSE;
+    colorblendStateCreateInfo.logicOpEnable     = VK_FALSE;             // enable this to use the second method (bitwise operation)
     colorblendStateCreateInfo.logicOp           = VK_LOGIC_OP_COPY;     // optional
     colorblendStateCreateInfo.attachmentCount   = 1;
     colorblendStateCreateInfo.pAttachments      = &colorblendAttachmentState;
@@ -1039,6 +1040,30 @@ bool VulkanManager::createGraphicsPipeline()
     colorblendStateCreateInfo.blendConstants[1] = 0.0f; // optional
     colorblendStateCreateInfo.blendConstants[2] = 0.0f; // optional
     colorblendStateCreateInfo.blendConstants[3] = 0.0f; // optional
+
+    // 4.9 Dynamic state
+    // certain states can be changed without creating a whole new pipeline state (e.x viewport size, blend constants...)
+    // simply fill the VkDynamicState structure. As a result, these value will be ignored at first
+    // and required to be specify the data during the draw.
+    VkDynamicState dynamicState[] {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_LINE_WIDTH};
+    VkPipelineDynamicStateCreateInfo dynamicStateCreateInfo{};
+    dynamicStateCreateInfo.sType                = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicStateCreateInfo.dynamicStateCount    = 2;
+    dynamicStateCreateInfo.pDynamicStates       = dynamicState;
+
+    // 4.10 Pipeline layout
+    // this allows you to pass 'uniform' constants to the shaders.
+    // In practice, transform matrices are usually passed through this.
+    VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo{};
+    pipelineLayoutCreateInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutCreateInfo.setLayoutCount         = 0;    // optional
+    pipelineLayoutCreateInfo.pSetLayouts            = nullptr;  // optional
+    pipelineLayoutCreateInfo.pushConstantRangeCount = 0;    // optional
+    pipelineLayoutCreateInfo.pPushConstantRanges    = nullptr;  // optional
+
+    // this is a manatory field to register even though we leave blank, so
+    if (vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayout) != VK_SUCCESS)
+        throw std::runtime_error("failed to create pipeline layout!");
 
     // shader module cleanup
     vkDestroyShaderModule(m_device, vertShaderModule, nullptr);
@@ -1080,6 +1105,7 @@ void VulkanManager::cleanVulkan()
     // extensions must be destroyed before vulkan instance
     if (enableValidationLayers)
         destroyDebugUtilsMessengerEXT(m_VkInstance, &m_debugMessenger, nullptr);
+    vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
     for (auto imageView : m_swapchainImageViews)
         vkDestroyImageView(m_device, imageView, nullptr);
     // swapchain is no exception
