@@ -979,6 +979,67 @@ bool VulkanManager::createGraphicsPipeline()
     scissor.offset = {0, 0};    // cover from the beginning
     scissor.extent = m_swapchainExtent; // to full size of the swapchain
 
+    // 4.5 Rasterizer
+    VkPipelineRasterizationStateCreateInfo rasterizationStateCreateInfo{};
+    rasterizationStateCreateInfo.sType                      = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizationStateCreateInfo.depthClampEnable           = VK_FALSE; // clamp range beyond near/far plane
+    rasterizationStateCreateInfo.rasterizerDiscardEnable    = VK_FALSE; // don't let geometry to pass the rasterizer, and won't display on framebuffer
+    rasterizationStateCreateInfo.polygonMode                = VK_POLYGON_MODE_FILL; // _LINE / _POINT (these two requires GPU feature)
+    rasterizationStateCreateInfo.lineWidth                  = 1.0f; // thickness of lines covering the fragment. Larger than 1.0 requires GPU feature
+    rasterizationStateCreateInfo.cullMode                   = VK_CULL_MODE_BACK_BIT;    // back-face culling
+    rasterizationStateCreateInfo.frontFace                  = VK_FRONT_FACE_CLOCKWISE;  // vertex oreder of the front face
+    rasterizationStateCreateInfo.depthBiasEnable            = VK_FALSE; // set true - adjust depth values through the values below
+    rasterizationStateCreateInfo.depthBiasConstantFactor    = 0.0f;
+    rasterizationStateCreateInfo.depthBiasClamp             = 0.0f;
+    rasterizationStateCreateInfo.depthBiasSlopeFactor       = 0.0f;
+
+    // 4.6 Multisampling
+    VkPipelineMultisampleStateCreateInfo multisampleStateCreateInfo{};
+    multisampleStateCreateInfo.sType                    = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampleStateCreateInfo.sampleShadingEnable      = VK_FALSE;
+    multisampleStateCreateInfo.rasterizationSamples     = VK_SAMPLE_COUNT_1_BIT;
+    multisampleStateCreateInfo.minSampleShading         = 1.0f; // optional
+    multisampleStateCreateInfo.pSampleMask              = nullptr;  // optional
+    multisampleStateCreateInfo.alphaToCoverageEnable    = VK_FALSE; // optional
+    multisampleStateCreateInfo.alphaToOneEnable         = VK_FALSE; // optional
+    // will come back.
+
+    // 4.7 Depth/Stencil buffers
+    VkPipelineDepthStencilStateCreateInfo depthStencilStateCreateInfo{};
+    depthStencilStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    // to be continued.
+
+    // 4.8 Color blending
+    // This happens when output of the fragment shader needs to be combined with the
+    // color that already exists in the frame buffer.
+    // You can do this in two ways - mix the two, or combine with bitwise operation
+
+    // contains per-framebuffer configuration
+    VkPipelineColorBlendAttachmentState colorblendAttachmentState{};
+    colorblendAttachmentState.colorWriteMask        = VK_COLOR_COMPONENT_R_BIT |    // colors that is actually passed through
+                                                      VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorblendAttachmentState.blendEnable           = VK_TRUE;
+    // below is optional, it's a sample config for alpha blending c1(a) * c2(1-a)
+    colorblendAttachmentState.srcColorBlendFactor   = VK_BLEND_FACTOR_SRC_ALPHA;
+    colorblendAttachmentState.dstAlphaBlendFactor   = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorblendAttachmentState.colorBlendOp          = VK_BLEND_OP_ADD;
+    colorblendAttachmentState.srcAlphaBlendFactor   = VK_BLEND_FACTOR_ONE;
+    colorblendAttachmentState.dstAlphaBlendFactor   = VK_BLEND_FACTOR_ZERO;
+    colorblendAttachmentState.alphaBlendOp          = VK_BLEND_OP_ADD;
+
+    // This references array of structures for all the framebuffers, and set blend constants
+    // that you can use it as a blend factors.
+    VkPipelineColorBlendStateCreateInfo colorblendStateCreateInfo{};
+    colorblendStateCreateInfo.sType             = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorblendStateCreateInfo.logicOpEnable     = VK_FALSE;
+    colorblendStateCreateInfo.logicOp           = VK_LOGIC_OP_COPY;     // optional
+    colorblendStateCreateInfo.attachmentCount   = 1;
+    colorblendStateCreateInfo.pAttachments      = &colorblendAttachmentState;
+    colorblendStateCreateInfo.blendConstants[0] = 0.0f; // optional
+    colorblendStateCreateInfo.blendConstants[1] = 0.0f; // optional
+    colorblendStateCreateInfo.blendConstants[2] = 0.0f; // optional
+    colorblendStateCreateInfo.blendConstants[3] = 0.0f; // optional
+
     // shader module cleanup
     vkDestroyShaderModule(m_device, vertShaderModule, nullptr);
     vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
