@@ -102,6 +102,7 @@ void VulkanManager::initVulkan(GLFWwindow* window)
     result &= createSwapChain(window);
     result &= createImageViews();
 
+    result &= createRenderPass();
     result &= createGraphicsPipeline();
 
     PRINT_BAR_DOTS();
@@ -1069,6 +1070,8 @@ bool VulkanManager::createGraphicsPipeline()
     vkDestroyShaderModule(m_device, vertShaderModule, nullptr);
     vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
 
+    PRINTLN("Created Graphics Pipeline.");
+
     return true;
 };
 
@@ -1094,6 +1097,74 @@ VkShaderModule VulkanManager::createShaderModule(const std::vector<char> &code)
 }
 
 
+// -------------------------<<  Render Passes  >>----------------------------
+//
+//  Render pass contains information about the framebuffer attachments
+//  that will be used during the rendering, such as:
+//  number of colors, depth buffers, how many samples for each of them
+//  how their contents should be handled...
+//
+// --------------------------------------------------------------------------
+
+bool VulkanManager::createRenderPass()
+{
+    PRINT_BAR_DOTS();
+
+    // 1. Attachment description
+    VkAttachmentDescription colorAttachmentDescription{};
+    colorAttachmentDescription.format   = m_swapchainImageFormat;   // should match with swapchain images
+    colorAttachmentDescription.samples  = VK_SAMPLE_COUNT_1_BIT;    // no multi-sample
+    // these two speficies what to do with the data attachment before/after loading
+    //  [loadOP]
+    //      _LOAD: preserve the existing contents of the attachment
+    //      _CLEAR: clear the values to a constant before start
+    //      _DONT_CARE: existing contents are undefined, we don't care about them
+    //  [storeOp]
+    //      _STORE: store in memory so it can be read later
+    //      _DONT_CARE: contents of the framebuffer will remain undefined
+    colorAttachmentDescription.loadOp           = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachmentDescription.storeOp          = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachmentDescription.stencilLoadOp    = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachmentDescription.stencilStoreOp   = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    // the textures and framebuffers are represented by VkImage objects in certain pixel formats,
+    // however this can be changed in the middle based on what you are trying to do.
+    //  _COLOR_ATTACHMENT_OPTIMAL: used for color attachment
+    //  _PRESENT_SRC_KHR: presented in the swapchain
+    //  _TRANSFER_DST_OPTIMAL: used for memory copy operation
+    colorAttachmentDescription.initialLayout    = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachmentDescription.finalLayout      = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    // 2. Subpasses
+    // All subpasses references one or more VkAttachmentDescription
+    VkAttachmentReference colorAttachmentReference{};
+    colorAttachmentReference.attachment  = 0;    // attachment index. our case, we only have one, therefore 0
+    colorAttachmentReference.layout      = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // we want layout as color buffer, in best optimized
+
+    VkSubpassDescription subpassDescription{};
+    subpassDescription.pipelineBindPoint     = VK_PIPELINE_BIND_POINT_GRAPHICS; // in case vulkan supports compute subpasses
+    subpassDescription.colorAttachmentCount  = 1;   // index of this array is directly referenced by the fragment shader via layout(location = 0)
+    subpassDescription.pColorAttachments     = &colorAttachmentReference;
+
+    // 3. Render Passes
+    VkRenderPassCreateInfo renderPassCreateInfo{};
+    renderPassCreateInfo.sType              = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassCreateInfo.attachmentCount    = 1;
+    renderPassCreateInfo.pAttachments       = &colorAttachmentDescription;
+    renderPassCreateInfo.subpassCount       = 1;
+    renderPassCreateInfo.pSubpasses         = &subpassDescription;
+
+    if (vkCreateRenderPass(m_device, &renderPassCreateInfo, nullptr, &m_renderPass) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to create render pass!");
+        return false;
+    }
+
+    PRINTLN("Created Render Passes.");
+
+    return true;
+}
+
+
 // --------------------------<<  Exit  >>----------------------------
 //
 //  VkPhysicalDevice - automatically handled
@@ -1105,6 +1176,7 @@ void VulkanManager::cleanVulkan()
     // extensions must be destroyed before vulkan instance
     if (enableValidationLayers)
         destroyDebugUtilsMessengerEXT(m_VkInstance, &m_debugMessenger, nullptr);
+    vkDestroyRenderPass(m_device, m_renderPass, nullptr);
     vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
     for (auto imageView : m_swapchainImageViews)
         vkDestroyImageView(m_device, imageView, nullptr);

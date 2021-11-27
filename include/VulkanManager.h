@@ -71,6 +71,9 @@ private:
     bool            createGraphicsPipeline();
     VkShaderModule  createShaderModule(const std::vector<char>&);
 
+    // << Render Passes >>
+    bool            createRenderPass();
+
 private:
     // << Vulkan Instance >> connects between the application and the Vulkan library.
     VkInstance                      m_VkInstance;
@@ -107,5 +110,6 @@ private:
     std::vector<VkImageView>        m_swapchainImageViews;
 
     // << Graphics Pipeline >>
+    VkRenderPass                    m_renderPass;
     VkPipelineLayout                m_pipelineLayout;
 };
