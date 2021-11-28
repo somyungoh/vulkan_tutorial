@@ -105,6 +105,8 @@ void VulkanManager::initVulkan(GLFWwindow* window)
     result &= createRenderPass();
     result &= createGraphicsPipeline();
 
+    result &= createFrameBuffers();
+
     PRINT_BAR_DOTS();
     if (result)
         PRINTLN("Successfully initialized Vulkan Manager");
@@ -1209,6 +1211,57 @@ VkShaderModule VulkanManager::createShaderModule(const std::vector<char> &code)
 }
 
 
+// -------------------------<<  Frame Buffers  >>---------------------------------
+//
+//  Previously we created render passes expecting to have a framebuffer with the
+//  same format as the swapchain images. It's time to create one.
+//
+//  The attachments that we specified in the render pass is wrapped into a
+//  Framebuffer object "VkFrameBuffer", which references to all the VkImageView
+//  objects that represents the attachments.
+//
+//  We need to create framebuffers for all corresponding swapchain images.
+//
+// -------------------------------------------------------------------------------
+
+bool VulkanManager::createFrameBuffers()
+{
+    PRINT_BAR_DOTS();
+
+    // resize as same as the swapchain imageViews
+    m_swapchainFrameBuffers.resize(m_swapchainImageViews.size());
+
+    // iterate every imageViews and create a corresponding frame buffer
+    bool result = true;
+    for (size_t i = 0; i < m_swapchainFrameBuffers.size(); i++)
+    {
+        VkImageView attachments[] = {m_swapchainImageViews[i]};
+
+        VkFramebufferCreateInfo frameBufferCreateInfo{};
+        frameBufferCreateInfo.sType             = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        frameBufferCreateInfo.renderPass        = m_renderPass; // compatible render pass
+        // VkImageView objects to reference
+        frameBufferCreateInfo.attachmentCount   = 1;    // in our case, just color attachment
+        frameBufferCreateInfo.pAttachments      = attachments;
+        frameBufferCreateInfo.width             = m_swapchainExtent.width;
+        frameBufferCreateInfo.height            = m_swapchainExtent.height;
+        // number of layers in image arrays.
+        frameBufferCreateInfo.layers            = 1;    // our swapchain images only has a single image
+
+        if (vkCreateFramebuffer(m_device, &frameBufferCreateInfo, nullptr, &m_swapchainFrameBuffers[i])
+            != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to create framebuffer!");
+            result = false;
+        }
+    }
+
+    if (result == true)
+        PRINTLN("Created Frame Buffers.");
+
+    return result;
+}
+
 // --------------------------<<  Exit  >>----------------------------
 //
 //  VkPhysicalDevice - automatically handled
@@ -1220,6 +1273,8 @@ void VulkanManager::cleanVulkan()
     // extensions must be destroyed before vulkan instance
     if (enableValidationLayers)
         destroyDebugUtilsMessengerEXT(m_VkInstance, &m_debugMessenger, nullptr);
+    for (auto framebuffer : m_swapchainFrameBuffers)
+        vkDestroyFramebuffer(m_device, framebuffer, nullptr);
     vkDestroyRenderPass(m_device, m_renderPass, nullptr);
     vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
     vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);

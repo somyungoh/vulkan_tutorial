@@ -72,7 +72,10 @@ private:
     VkShaderModule  createShaderModule(const std::vector<char>&);
 
     // << Render Passes >>
-    bool            createRenderPass();
+    bool        createRenderPass();
+
+    // << Frame Buffers >>
+    bool        createFrameBuffers();
 
 private:
     // << Vulkan Instance >> connects between the application and the Vulkan library.
@@ -115,4 +118,7 @@ private:
     // << Graphics Pipeline >>
     VkPipelineLayout                m_pipelineLayout;
     VkPipeline                      m_graphicsPipeline;
+
+    // << Frame Buffers >>
+    std::vector<VkFramebuffer>      m_swapchainFrameBuffers;
 };
