@@ -109,7 +109,10 @@ private:
     // << Image Views >>
     std::vector<VkImageView>        m_swapchainImageViews;
 
-    // << Graphics Pipeline >>
+    // << Render Pass >>
     VkRenderPass                    m_renderPass;
+
+    // << Graphics Pipeline >>
     VkPipelineLayout                m_pipelineLayout;
+    VkPipeline                      m_graphicsPipeline;
 };
