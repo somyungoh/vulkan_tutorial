@@ -92,20 +92,25 @@ void VulkanManager::initVulkan(GLFWwindow* window)
 
     bool result = true;
 
+    // Initial Setup
     result &= createVulkanInstance();
     result &= createDebugMessenger();
 
+    // Presentation
     result &= createWindowSurface(window);
     result &= loadPhysicalDevice();
     result &= createLogicalDevice();
-
     result &= createSwapChain(window);
     result &= createImageViews();
 
+    // Graphics Pipeline
     result &= createRenderPass();
     result &= createGraphicsPipeline();
 
+    // Drawing
     result &= createFrameBuffers();
+    result &= createCommandPool();
+    result &= createCommandBuffers();
 
     PRINT_BAR_DOTS();
     if (result)
@@ -1262,6 +1267,129 @@ bool VulkanManager::createFrameBuffers()
     return result;
 }
 
+
+// ------------------------<<  Command Buffers  >>---------------------------
+//
+//  Commnads, here includes such as drawing operations, memory transfers.
+//  In Vulkan, you need to record all these commands in the command buffer
+//  objects. It's a hard work than other APIs but there an advantage of
+//  being able to setting up the commands all in advance and simply have to
+//  execute in the main loop.
+//
+// --------------------------------------------------------------------------
+
+bool VulkanManager::createCommandPool()
+{
+    PRINT_BAR_DOTS();
+
+    QueueFamilyIndices queueFamilyIndices = findQueueFamilies(m_physicalDevice);
+    VkCommandPoolCreateInfo commandPoolCreateInfo{};
+    commandPoolCreateInfo.sType             = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    // command buffers are executed by submitting them to one of the device queues.
+    // (recap that we had graphics queues, presentation queues...)
+    commandPoolCreateInfo.queueFamilyIndex  = queueFamilyIndices.graphicsFamily.value();    // chose graphics queue to store drawing commands
+    // optional flag has two choices:
+    //  - VK_COMMAND_POOL_CREATE_TRANSIENT_BIT: command buffers are recorded with new commands very often
+    //  - VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT: allow command buffers to be recoreded individually
+    commandPoolCreateInfo.flags             = 0;    // neither in that case
+
+    if (vkCreateCommandPool(m_device, &commandPoolCreateInfo, nullptr, &m_commandPool) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to create command pool!");
+        return false;
+    }
+
+    PRINTLN("Created Command Pool.");
+
+    return true;
+}
+
+bool VulkanManager::createCommandBuffers()
+{
+    // Here we record the drawing commands, which requires to bind into a correct VkFrameBuffer.
+    // Therefore, we'll record the command for each swapchain images into the VkCommandBuffer objects.
+    // Note that these command objects will be freed when the command pool is destroyed, so
+    // no explicit clean up is required.
+
+    bool result = true;
+
+    m_commandBuffers.resize(m_swapchainFrameBuffers.size());
+
+    VkCommandBufferAllocateInfo commandBufferAllocationInfo{};
+    commandBufferAllocationInfo.sType           = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    commandBufferAllocationInfo.commandPool     = m_commandPool;
+    // level parameter specifies whether the command is a primary or secondary buffer:
+    //  - _LEVEL_PRIMARY: can be submitted for execution, but cannot be called from other command buffers
+    //  - _LEVEL_SECONDARY: cannoy be submitted directly, but can be called from the primary command buffers
+    commandBufferAllocationInfo.level               = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    commandBufferAllocationInfo.commandBufferCount  = (uint32_t)m_commandBuffers.size();
+
+    if (vkAllocateCommandBuffers(m_device, &commandBufferAllocationInfo, m_commandBuffers.data()) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to allocate command buffers!");
+        result = false;
+    }
+
+    for (size_t i = 0; i < m_commandBuffers.size(); i++)
+    {
+        // 1. Start recording command buffers
+        VkCommandBufferBeginInfo commandBufferBeginInfo{};
+        commandBufferBeginInfo.sType    = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        // optional flag specifying how the command buffers will be used
+        //  - VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT: will be recorded right after executing it once
+        //  - VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT: will be a secondary command buffer living in a single render pass
+        //  - VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT: will be able to be re-submitted even if it's in a pending state
+        commandBufferBeginInfo.flags            = 0;
+        commandBufferBeginInfo.pInheritanceInfo = nullptr;  // only relavent for secondary command buffers
+
+        if (vkBeginCommandBuffer(m_commandBuffers[i], &commandBufferBeginInfo) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to begin command buffer!");
+            result = false;
+        }
+
+        // 2. Start render passes
+        VkRenderPassBeginInfo renderPassBeginInfo{};
+        renderPassBeginInfo.sType       = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassBeginInfo.renderPass  = m_renderPass;
+        renderPassBeginInfo.framebuffer = m_swapchainFrameBuffers[i];
+        // render area size
+        renderPassBeginInfo.renderArea.offset   = {0, 0};
+        renderPassBeginInfo.renderArea.extent   = m_swapchainExtent;
+        // clear color that will be used by VK_ATTACHMENT_LOAD_OP_CLEAR option we previouly set
+        VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+        renderPassBeginInfo.clearValueCount = 1;
+        renderPassBeginInfo.pClearValues    = &clearColor;
+
+        // Begin render pass
+        // last parameter: how the drawing command within the render pass will be provided.
+        //  - VK_SUBPASS_CONTENTS_INLINE: render pass commands will be embedded in the primary commnad buffer, no secondary command buffer execution happening
+        //  - VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS: render pass commands are executed in the secondary command buffers
+        vkCmdBeginRenderPass(m_commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        // Bind graphics pipeline
+        vkCmdBindPipeline(m_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);    // graphics or compute?
+
+        // 3. Record commands
+        // All the functions that record commands are prefixed with vkCmd
+        // (vertex count, instance count, first vertex, first instance)
+        vkCmdDraw(m_commandBuffers[i], 3, 1, 0, 0);
+
+        // 4. Finish
+        vkCmdEndRenderPass(m_commandBuffers[i]);
+        if (vkEndCommandBuffer(m_commandBuffers[i]) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to record command buffer!");
+            result = false;
+        }
+    }
+
+    if (result == true)
+        PRINTLN("Created Command Buffers.");
+
+    return result;
+}
+
 // --------------------------<<  Exit  >>----------------------------
 //
 //  VkPhysicalDevice - automatically handled
@@ -1273,6 +1401,8 @@ void VulkanManager::cleanVulkan()
     // extensions must be destroyed before vulkan instance
     if (enableValidationLayers)
         destroyDebugUtilsMessengerEXT(m_VkInstance, &m_debugMessenger, nullptr);
+
+    vkDestroyCommandPool(m_device, m_commandPool, nullptr);
     for (auto framebuffer : m_swapchainFrameBuffers)
         vkDestroyFramebuffer(m_device, framebuffer, nullptr);
     vkDestroyRenderPass(m_device, m_renderPass, nullptr);
