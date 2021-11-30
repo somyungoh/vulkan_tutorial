@@ -112,6 +112,9 @@ void VulkanManager::initVulkan(GLFWwindow* window)
     result &= createCommandPool();
     result &= createCommandBuffers();
 
+    // Rendering & Presentation
+    result &= createSemaphores();
+
     PRINT_BAR_DOTS();
     if (result)
         PRINTLN("Successfully initialized Vulkan Manager");
@@ -968,7 +971,7 @@ bool VulkanManager::createRenderPass()
         return false;
     }
 
-    PRINTLN("Created Render Passes.");
+    PRINTLN("Created Render Passes");
 
     return true;
 }
@@ -1150,7 +1153,7 @@ bool VulkanManager::createGraphicsPipeline()
     else
     {
         result = true;
-        PRINTLN("Created Graphics Pipeline Layout.");
+        PRINTLN("Created Graphics Pipeline Layout");
     }
 
     // 5. Graphics Pipeline
@@ -1189,7 +1192,7 @@ bool VulkanManager::createGraphicsPipeline()
     vkDestroyShaderModule(m_device, vertShaderModule, nullptr);
     vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
 
-    PRINTLN("Created Graphics Pipeline.");
+    PRINTLN("Created Graphics Pipeline");
 
     return result;
 };
@@ -1262,7 +1265,7 @@ bool VulkanManager::createFrameBuffers()
     }
 
     if (result == true)
-        PRINTLN("Created Frame Buffers.");
+        PRINTLN("Created Frame Buffers");
 
     return result;
 }
@@ -1299,7 +1302,7 @@ bool VulkanManager::createCommandPool()
         return false;
     }
 
-    PRINTLN("Created Command Pool.");
+    PRINTLN("Created Command Pool");
 
     return true;
 }
@@ -1385,10 +1388,45 @@ bool VulkanManager::createCommandBuffers()
     }
 
     if (result == true)
-        PRINTLN("Created Command Buffers.");
+        PRINTLN("Created Command Buffers");
 
     return result;
 }
+
+
+// ----------------<<  Syncronization - Semaphores  >>------------------------
+//
+//  Series of rendering operations - swapchain image inquiry, commnad buufer
+//  execution, returning image to the swapchain - are done asyncronously.
+//  Syncronizing these swapchain events can be done in two ways - Fences or
+//  Semaphores.
+//  Fences states can be accessed from the program using "vkWaitForFences"
+//  and is mainly for the purpose of syncronizing the application with the
+//  rendering.
+//  Semaphores in the other hand, cannot be accessed by the program and it's
+//  usage is mainly for syncronizing across the command queues.
+//
+// ---------------------------------------------------------------------------
+
+bool VulkanManager::createSemaphores()
+{
+    PRINT_BAR_DOTS();
+
+    VkSemaphoreCreateInfo semaphoreCreateInfo{};
+    semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+    if (vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_imageAvailableSemaphore) != VK_SUCCESS ||
+        vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_renderFinishedSemaphore) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to create semaphores!");
+        return false;
+    }
+
+    PRINTLN("Created Semaphores");
+
+    return true;
+}
+
 
 // --------------------------<<  Exit  >>----------------------------
 //
@@ -1401,7 +1439,8 @@ void VulkanManager::cleanVulkan()
     // extensions must be destroyed before vulkan instance
     if (enableValidationLayers)
         destroyDebugUtilsMessengerEXT(m_VkInstance, &m_debugMessenger, nullptr);
-
+    vkDestroySemaphore(m_device, m_renderFinishedSemaphore, nullptr);
+    vkDestroySemaphore(m_device, m_imageAvailableSemaphore, nullptr);
     vkDestroyCommandPool(m_device, m_commandPool, nullptr);
     for (auto framebuffer : m_swapchainFrameBuffers)
         vkDestroyFramebuffer(m_device, framebuffer, nullptr);

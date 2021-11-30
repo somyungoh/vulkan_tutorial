@@ -81,6 +81,10 @@ private:
     bool createCommandPool();
     bool createCommandBuffers();
 
+    // << Semaphore >>
+    bool createSemaphores();
+
+
 private:
     // << Vulkan Instance >> connects between the application and the Vulkan library.
     VkInstance                      m_VkInstance;
@@ -129,4 +133,8 @@ private:
     // << Command Buffers >>
     VkCommandPool                   m_commandPool;
     std::vector<VkCommandBuffer>    m_commandBuffers;
+
+    // << Semaphores >>
+    VkSemaphore                     m_imageAvailableSemaphore;
+    VkSemaphore                     m_renderFinishedSemaphore;
 };
