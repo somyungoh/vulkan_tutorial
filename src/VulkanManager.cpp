@@ -1428,6 +1428,53 @@ bool VulkanManager::createSemaphores()
 }
 
 
+// -------------------------<<  Drawing  >>--------------------------
+//
+//
+// ------------------------------------------------------------------
+
+uint32 VulkanManager::acquireNextImageIndex()
+{
+    uint32 nextImageIndex;
+    vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, m_imageAvailableSemaphore,
+                          VK_NULL_HANDLE, &nextImageIndex);
+
+    return nextImageIndex;
+}
+
+bool VulkanManager::submitCommandBuffer(const uint32 imageIndex)
+{
+    VkSemaphore             signalSemaphores[] = {m_renderFinishedSemaphore};
+    VkSemaphore             waitSemaphores[] = {m_imageAvailableSemaphore};
+    VkPipelineStageFlags    waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    // Semaphore information. In this case, we would like to wait until the
+    // graphics pipeline stage where color attachment is available.
+    submitInfo.waitSemaphoreCount   = 1;
+    submitInfo.pWaitSemaphores      = waitSemaphores;
+    submitInfo.pWaitDstStageMask    = waitStages;
+    // Which command buffer to submit. It should be binded into the
+    // acquired swapchain image
+    submitInfo.commandBufferCount   = 1;
+    submitInfo.pCommandBuffers      = &m_commandBuffers[imageIndex];
+    // Which semaphores to signal once command buffer has finised execution
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores    = signalSemaphores;
+
+    if (vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to submit command buffer!");
+        return false;
+    }
+
+    PRINTLN("Submitted Command Buffer");
+
+    return true;
+}
+
+
 // --------------------------<<  Exit  >>----------------------------
 //
 //  VkPhysicalDevice - automatically handled
