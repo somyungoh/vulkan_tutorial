@@ -1439,7 +1439,7 @@ bool VulkanManager::createSemaphores()
         return false;
     }
 
-    PRINTLN("Created Semaphores");
+    PRINTLN_VERBOSE("Created Semaphores");
 
     return true;
 }
@@ -1480,11 +1480,42 @@ bool VulkanManager::submitCommandBuffer(const uint32_t imageIndex)
         return false;
     }
 
-    PRINTLN("Submitted Command Buffer");
+    PRINTLN_VERBOSE("Submitted Command Buffer");
 
     return true;
 }
 
+bool VulkanManager::submitPresentation(const uint32_t imageIndex)
+{
+    // This is the last step for display something on the screen,
+    // is to submit the image back to the swapchain.
+    VkSemaphore     signalSemaphores[] = {m_renderFinishedSemaphore};
+    VkSwapchainKHR  swapchains[] = {m_swapchain};
+
+    VkPresentInfoKHR presentationInfo{};
+    presentationInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    presentationInfo.waitSemaphoreCount = 1;
+    presentationInfo.pWaitSemaphores    = signalSemaphores;
+    // which swapchain to present images and it's image index
+    presentationInfo.swapchainCount     = 1;
+    presentationInfo.pSwapchains        = swapchains;
+    presentationInfo.pImageIndices      = &imageIndex;
+    // array of VK_RESULT that corresponds to each swapchain images
+    presentationInfo.pResults           = nullptr;
+
+    vkQueuePresentKHR(m_presentationQueue, &presentationInfo);
+
+    PRINTLN_VERBOSE("Submitted Presentaion");
+
+    return true;
+}
+
+void VulkanManager::drawFrame()
+{
+    const uint32_t imgIndex = acquireNextImageIndex();
+    submitCommandBuffer(imgIndex);
+    submitPresentation(imgIndex);
+}
 
 // --------------------------<<  Exit  >>----------------------------
 //
@@ -1494,6 +1525,9 @@ bool VulkanManager::submitCommandBuffer(const uint32_t imageIndex)
 
 void VulkanManager::cleanVulkan()
 {
+    // wait for any remaining asyncronous operations before cleanup
+    vkDeviceWaitIdle(m_device);
+
     // extensions must be destroyed before vulkan instance
     if (enableValidationLayers)
         destroyDebugUtilsMessengerEXT(m_VkInstance, &m_debugMessenger, nullptr);

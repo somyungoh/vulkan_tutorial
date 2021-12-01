@@ -14,6 +14,8 @@ public:
     VulkanManager();
 
     void    initVulkan(GLFWwindow*);
+    void    drawFrame();
+
     void    cleanVulkan();
 
 
@@ -85,6 +87,7 @@ private:
     bool        createSemaphores();
     uint32_t    acquireNextImageIndex();
     bool        submitCommandBuffer(const uint32_t);
+    bool        submitPresentation(const uint32_t);
 
 private:
     // << Vulkan Instance >> connects between the application and the Vulkan library.
