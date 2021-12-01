@@ -81,10 +81,10 @@ private:
     bool createCommandPool();
     bool createCommandBuffers();
 
-    // << Drawing >>
-    bool    createSemaphores();
-    uint32  acquireNextImageIndex();
-    bool    submitCommandBuffer(const uint32);
+    // << Rendering & Presentation >>
+    bool        createSemaphores();
+    uint32_t    acquireNextImageIndex();
+    bool        submitCommandBuffer(const uint32_t);
 
 private:
     // << Vulkan Instance >> connects between the application and the Vulkan library.

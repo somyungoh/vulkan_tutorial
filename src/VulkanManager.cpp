@@ -957,6 +957,20 @@ bool VulkanManager::createRenderPass()
     subpassDescription.colorAttachmentCount  = 1;   // index of this array is directly referenced by the fragment shader via layout(location = 0)
     subpassDescription.pColorAttachments     = &colorAttachmentReference;
 
+    // This specifies memory and execution dependencies between subpasses
+    // including the start/end. Although, these have built-in dependencies.
+    VkSubpassDependency subpassDependency{};
+    // indices of the dependency and the dependent subpass
+    subpassDependency.srcSubpass    = VK_SUBPASS_EXTERNAL;  // before/after the renderpass
+    subpassDependency.dstSubpass    = 0;    // first pass (the only one is our case)
+    // operation to wait and in which stage that occurs
+    // here, we wait for swapchain to finish reading the image before we access it
+    subpassDependency.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    subpassDependency.srcAccessMask = 0;
+    // color attatchment write - will wait until the "dstStageMask" stage
+    subpassDependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    subpassDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
     // 3. Render Passes
     VkRenderPassCreateInfo renderPassCreateInfo{};
     renderPassCreateInfo.sType              = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -964,6 +978,8 @@ bool VulkanManager::createRenderPass()
     renderPassCreateInfo.pAttachments       = &colorAttachmentDescription;
     renderPassCreateInfo.subpassCount       = 1;
     renderPassCreateInfo.pSubpasses         = &subpassDescription;
+    renderPassCreateInfo.dependencyCount    = 1;
+    renderPassCreateInfo.pDependencies      = &subpassDependency;
 
     if (vkCreateRenderPass(m_device, &renderPassCreateInfo, nullptr, &m_renderPass) != VK_SUCCESS)
     {
@@ -1394,22 +1410,23 @@ bool VulkanManager::createCommandBuffers()
 }
 
 
-// ----------------<<  Syncronization - Semaphores  >>------------------------
+// ---------------------<<  Rendering & Presentation  >>----------------------
 //
 //  Series of rendering operations - swapchain image inquiry, commnad buufer
 //  execution, returning image to the swapchain - are done asyncronously.
-//  Syncronizing these swapchain events can be done in two ways - Fences or
-//  Semaphores.
-//  Fences states can be accessed from the program using "vkWaitForFences"
-//  and is mainly for the purpose of syncronizing the application with the
-//  rendering.
-//  Semaphores in the other hand, cannot be accessed by the program and it's
-//  usage is mainly for syncronizing across the command queues.
 //
 // ---------------------------------------------------------------------------
 
 bool VulkanManager::createSemaphores()
 {
+    // Syncronizing swapchain events can be done in two ways - Fences or
+    // Semaphores.
+    // "Fences" states can be accessed from the program using "vkWaitForFences"
+    // and is mainly for the purpose of syncronizing the application with the
+    // rendering.
+    // "Semaphores" in the other hand, cannot be accessed by the program and it's
+    // usage is mainly for syncronizing across the command queues.
+
     PRINT_BAR_DOTS();
 
     VkSemaphoreCreateInfo semaphoreCreateInfo{};
@@ -1427,22 +1444,16 @@ bool VulkanManager::createSemaphores()
     return true;
 }
 
-
-// -------------------------<<  Drawing  >>--------------------------
-//
-//
-// ------------------------------------------------------------------
-
-uint32 VulkanManager::acquireNextImageIndex()
+uint32_t VulkanManager::acquireNextImageIndex()
 {
-    uint32 nextImageIndex;
+    uint32_t nextImageIndex;
     vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, m_imageAvailableSemaphore,
                           VK_NULL_HANDLE, &nextImageIndex);
 
     return nextImageIndex;
 }
 
-bool VulkanManager::submitCommandBuffer(const uint32 imageIndex)
+bool VulkanManager::submitCommandBuffer(const uint32_t imageIndex)
 {
     VkSemaphore             signalSemaphores[] = {m_renderFinishedSemaphore};
     VkSemaphore             waitSemaphores[] = {m_imageAvailableSemaphore};
