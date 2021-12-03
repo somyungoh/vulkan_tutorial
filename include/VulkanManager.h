@@ -85,9 +85,9 @@ private:
 
     // << Rendering & Presentation >>
     bool        createSemaphores();
-    uint32_t    acquireNextImageIndex();
-    bool        submitCommandBuffer(const uint32_t);
-    bool        submitPresentation(const uint32_t);
+    uint32_t    acquireNextImageIndex(const uint32_t frameIndex, uint32_t &imageIndex);
+    bool        submitCommandBuffer(const uint32_t frameIndex, const uint32_t imageIndex);
+    bool        submitPresentation(const uint32_t frameIndex, const uint32_t imageIndex);
 
 private:
     // << Vulkan Instance >> connects between the application and the Vulkan library.
@@ -138,7 +138,8 @@ private:
     VkCommandPool                   m_commandPool;
     std::vector<VkCommandBuffer>    m_commandBuffers;
 
-    // << Semaphores >>
-    VkSemaphore                     m_imageAvailableSemaphore;
-    VkSemaphore                     m_renderFinishedSemaphore;
+    // << Rendering & Presentation >>
+    uint32_t                        m_curretFrameIndex;
+    std::vector<VkSemaphore>        m_imageAvailableSemaphores;
+    std::vector<VkSemaphore>        m_renderFinishedSemaphores;
 };

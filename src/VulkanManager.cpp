@@ -28,6 +28,9 @@
 #include <algorithm>    // std::min, std::max
 #include <fstream>
 
+#ifndef MAX_FRAMES_IN_FLIGHT
+#   define MAX_FRAMES_IN_FLIGHT 2
+#endif
 
 struct QueueFamilyIndices
 {
@@ -1429,14 +1432,19 @@ bool VulkanManager::createSemaphores()
 
     PRINT_BAR_DOTS();
 
+    m_imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    m_renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+
     VkSemaphoreCreateInfo semaphoreCreateInfo{};
     semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
-    if (vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_imageAvailableSemaphore) != VK_SUCCESS ||
-        vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_renderFinishedSemaphore) != VK_SUCCESS)
-    {
-        throw std::runtime_error("failed to create semaphores!");
-        return false;
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        if (vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_imageAvailableSemaphores[i]) != VK_SUCCESS ||
+            vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_renderFinishedSemaphores[i]) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to create semaphores!");
+            return false;
+        }
     }
 
     PRINTLN_VERBOSE("Created Semaphores");
@@ -1444,19 +1452,18 @@ bool VulkanManager::createSemaphores()
     return true;
 }
 
-uint32_t VulkanManager::acquireNextImageIndex()
+uint32_t VulkanManager::acquireNextImageIndex(const uint32_t frameIndex, uint32_t &nextImageIndex)
 {
-    uint32_t nextImageIndex;
-    vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, m_imageAvailableSemaphore,
+    vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, m_imageAvailableSemaphores[frameIndex],
                           VK_NULL_HANDLE, &nextImageIndex);
 
     return nextImageIndex;
 }
 
-bool VulkanManager::submitCommandBuffer(const uint32_t imageIndex)
+bool VulkanManager::submitCommandBuffer(const uint32_t frameIndex, const uint32_t imageIndex)
 {
-    VkSemaphore             signalSemaphores[] = {m_renderFinishedSemaphore};
-    VkSemaphore             waitSemaphores[] = {m_imageAvailableSemaphore};
+    VkSemaphore             signalSemaphores[] = {m_renderFinishedSemaphores[frameIndex]};
+    VkSemaphore             waitSemaphores[] = {m_imageAvailableSemaphores[frameIndex]};
     VkPipelineStageFlags    waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
 
     VkSubmitInfo submitInfo{};
@@ -1480,16 +1487,14 @@ bool VulkanManager::submitCommandBuffer(const uint32_t imageIndex)
         return false;
     }
 
-    PRINTLN_VERBOSE("Submitted Command Buffer");
-
     return true;
 }
 
-bool VulkanManager::submitPresentation(const uint32_t imageIndex)
+bool VulkanManager::submitPresentation(const uint32_t frameIndex, const uint32_t imageIndex)
 {
     // This is the last step for display something on the screen,
     // is to submit the image back to the swapchain.
-    VkSemaphore     signalSemaphores[] = {m_renderFinishedSemaphore};
+    VkSemaphore     signalSemaphores[] = {m_renderFinishedSemaphores[frameIndex]};
     VkSwapchainKHR  swapchains[] = {m_swapchain};
 
     VkPresentInfoKHR presentationInfo{};
@@ -1505,16 +1510,25 @@ bool VulkanManager::submitPresentation(const uint32_t imageIndex)
 
     vkQueuePresentKHR(m_presentationQueue, &presentationInfo);
 
-    PRINTLN_VERBOSE("Submitted Presentaion");
-
     return true;
 }
 
 void VulkanManager::drawFrame()
 {
-    const uint32_t imgIndex = acquireNextImageIndex();
-    submitCommandBuffer(imgIndex);
-    submitPresentation(imgIndex);
+    m_curretFrameIndex = (m_curretFrameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
+    uint32_t imgIndex;
+    acquireNextImageIndex(m_curretFrameIndex, imgIndex);
+    submitCommandBuffer(m_curretFrameIndex, imgIndex);
+    submitPresentation(m_curretFrameIndex, imgIndex);
+
+    // Quick & lazy way of syncronizing CPU work submission speed with the
+    // GPU work speed. The optimal way is by implementing the "Frames in Flight"
+    // concept.
+    // Note that Validation will raise error telling that memory is growing
+    //due to GPU work not being able to quickly flush the CPU submission queues
+#if 0
+    vkQueueWaitIdle(m_presentationQueue);
+#endif
 }
 
 // --------------------------<<  Exit  >>----------------------------
@@ -1531,8 +1545,10 @@ void VulkanManager::cleanVulkan()
     // extensions must be destroyed before vulkan instance
     if (enableValidationLayers)
         destroyDebugUtilsMessengerEXT(m_VkInstance, &m_debugMessenger, nullptr);
-    vkDestroySemaphore(m_device, m_renderFinishedSemaphore, nullptr);
-    vkDestroySemaphore(m_device, m_imageAvailableSemaphore, nullptr);
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        vkDestroySemaphore(m_device, m_renderFinishedSemaphores[i], nullptr);
+        vkDestroySemaphore(m_device, m_imageAvailableSemaphores[i], nullptr);
+    }
     vkDestroyCommandPool(m_device, m_commandPool, nullptr);
     for (auto framebuffer : m_swapchainFrameBuffers)
         vkDestroyFramebuffer(m_device, framebuffer, nullptr);
