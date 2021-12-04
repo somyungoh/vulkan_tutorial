@@ -116,7 +116,7 @@ void VulkanManager::initVulkan(GLFWwindow* window)
     result &= createCommandBuffers();
 
     // Rendering & Presentation
-    result &= createSemaphores();
+    result &= createSyncObjects();
 
     PRINT_BAR_DOTS();
     if (result)
@@ -1420,7 +1420,7 @@ bool VulkanManager::createCommandBuffers()
 //
 // ---------------------------------------------------------------------------
 
-bool VulkanManager::createSemaphores()
+bool VulkanManager::createSyncObjects()
 {
     // Syncronizing swapchain events can be done in two ways - Fences or
     // Semaphores.
@@ -1432,17 +1432,23 @@ bool VulkanManager::createSemaphores()
 
     PRINT_BAR_DOTS();
 
-    m_imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-    m_renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    m_imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);    // for command queue syncronization
+    m_renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);    // for command queue syncronization
+    m_inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);  // for CPU-GPU syncronization
+    m_imagesInFlight.resize(m_swapchainImages.size(), VK_NULL_HANDLE);  // track images in flight
 
     VkSemaphoreCreateInfo semaphoreCreateInfo{};
     semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    VkFenceCreateInfo fenceCreateInfo{};
+    fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         if (vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_imageAvailableSemaphores[i]) != VK_SUCCESS ||
-            vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_renderFinishedSemaphores[i]) != VK_SUCCESS)
+            vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_renderFinishedSemaphores[i]) != VK_SUCCESS ||
+            vkCreateFence(m_device, &fenceCreateInfo, nullptr, &m_inFlightFences[i]) != VK_SUCCESS)
         {
-            throw std::runtime_error("failed to create semaphores!");
+            throw std::runtime_error("failed to create semaphores and fences!");
             return false;
         }
     }
@@ -1481,8 +1487,7 @@ bool VulkanManager::submitCommandBuffer(const uint32_t frameIndex, const uint32_
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores    = signalSemaphores;
 
-    if (vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS)
-    {
+    if (vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFences[frameIndex]) != VK_SUCCESS){
         throw std::runtime_error("failed to submit command buffer!");
         return false;
     }
@@ -1518,17 +1523,30 @@ void VulkanManager::drawFrame()
     m_curretFrameIndex = (m_curretFrameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
     uint32_t imgIndex;
     acquireNextImageIndex(m_curretFrameIndex, imgIndex);
+
+    // CPU - GPU syncronization.
+    // Normally at this point, GPU work speed cannot follow up the CPU work
+    // submission speed, ending up submission queue growing by time. Validation
+    // Layer raises an error or warning about this if enbled.
+    // There are two ways you can handle this:
+#if 0
+    // Quick & lazy way
+    vkQueueWaitIdle(m_presentationQueue);   // no need of any fences
+#else
+    // Frames in Flight
+    // check if the previous image is using this image
+    if (m_imagesInFlight[imgIndex] != VK_NULL_HANDLE)
+        // Wait for any or all of the passed fences (VK_TRUE means wait for ALL of them).
+        vkWaitForFences(m_device, 1, &m_imagesInFlight[imgIndex], VK_TRUE, UINT64_MAX);
+    // mark current frame is using this image
+    m_imagesInFlight[imgIndex] = m_inFlightFences[m_curretFrameIndex];
+
+    // Reset fences into 'unsignaled' state
+    vkResetFences(m_device, 1, &m_inFlightFences[m_curretFrameIndex]);
+#endif
+
     submitCommandBuffer(m_curretFrameIndex, imgIndex);
     submitPresentation(m_curretFrameIndex, imgIndex);
-
-    // Quick & lazy way of syncronizing CPU work submission speed with the
-    // GPU work speed. The optimal way is by implementing the "Frames in Flight"
-    // concept.
-    // Note that Validation will raise error telling that memory is growing
-    //due to GPU work not being able to quickly flush the CPU submission queues
-#if 0
-    vkQueueWaitIdle(m_presentationQueue);
-#endif
 }
 
 // --------------------------<<  Exit  >>----------------------------
@@ -1548,6 +1566,7 @@ void VulkanManager::cleanVulkan()
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         vkDestroySemaphore(m_device, m_renderFinishedSemaphores[i], nullptr);
         vkDestroySemaphore(m_device, m_imageAvailableSemaphores[i], nullptr);
+        vkDestroyFence(m_device, m_inFlightFences[i], nullptr);
     }
     vkDestroyCommandPool(m_device, m_commandPool, nullptr);
     for (auto framebuffer : m_swapchainFrameBuffers)

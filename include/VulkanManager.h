@@ -84,7 +84,7 @@ private:
     bool createCommandBuffers();
 
     // << Rendering & Presentation >>
-    bool        createSemaphores();
+    bool        createSyncObjects();
     uint32_t    acquireNextImageIndex(const uint32_t frameIndex, uint32_t &imageIndex);
     bool        submitCommandBuffer(const uint32_t frameIndex, const uint32_t imageIndex);
     bool        submitPresentation(const uint32_t frameIndex, const uint32_t imageIndex);
@@ -142,4 +142,6 @@ private:
     uint32_t                        m_curretFrameIndex;
     std::vector<VkSemaphore>        m_imageAvailableSemaphores;
     std::vector<VkSemaphore>        m_renderFinishedSemaphores;
+    std::vector<VkFence>            m_inFlightFences;
+    std::vector<VkFence>            m_imagesInFlight;
 };
