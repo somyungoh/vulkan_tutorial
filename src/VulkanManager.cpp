@@ -771,6 +771,15 @@ bool VulkanManager::recreateSwapChain()
     // Swapchain information can be outdated such when window size has changed.
     // In that case, we will need to create a new swapchain.
 
+    // handle window minimized case, in which the framebuffer size is 0.
+    int width = 0;
+    int height = 0;
+    glfwGetFramebufferSize(m_window, &width, &height);
+    while (width == 0 || height == 0) {
+        glfwGetFramebufferSize(m_window, &width, &height);
+        glfwWaitEvents();
+    }
+
     vkDeviceWaitIdle(m_device);
 
     cleanSwapChain();
