@@ -54,17 +54,19 @@ private:
 
     bool    createLogicalDevice();
 
-    bool    createWindowSurface(GLFWwindow*);
+    bool    createWindowSurface();
 
     // << Device Extensions >>
     bool    checkDeviceExtensionSupport(VkPhysicalDevice);
 
     // << Swap Chain >>
-    bool                    createSwapChain(GLFWwindow*);
+    bool                    createSwapChain();
+    bool                    recreateSwapChain();
+    void                    cleanSwapChain();
     SwapchainSupportDetails querySwapChainSupport(VkPhysicalDevice);
     VkSurfaceFormatKHR      chooseSurfaceFormat(const std::vector<VkSurfaceFormatKHR>&);
     VkPresentModeKHR        choosePresentMode(const std::vector<VkPresentModeKHR>&);
-    VkExtent2D              chooseExtent2D(GLFWwindow*, const VkSurfaceCapabilitiesKHR&);
+    VkExtent2D              chooseExtent2D(const VkSurfaceCapabilitiesKHR&);
 
     // << Image Views >>
     bool createImageViews();
@@ -84,10 +86,10 @@ private:
     bool createCommandBuffers();
 
     // << Rendering & Presentation >>
-    bool        createSyncObjects();
-    uint32_t    acquireNextImageIndex(const uint32_t frameIndex, uint32_t &imageIndex);
-    bool        submitCommandBuffer(const uint32_t frameIndex, const uint32_t imageIndex);
-    bool        submitPresentation(const uint32_t frameIndex, const uint32_t imageIndex);
+    bool  createSyncObjects();
+    bool  acquireNextImageIndex(const uint32_t frameIndex, uint32_t &imageIndex);
+    bool  submitCommandBuffer(const uint32_t frameIndex, const uint32_t imageIndex);
+    bool  submitPresentation(const uint32_t frameIndex, const uint32_t imageIndex);
 
 private:
     // << Vulkan Instance >> connects between the application and the Vulkan library.
@@ -110,6 +112,7 @@ private:
     VkQueue                         m_presentationQueue;
 
     // << Window Surface >>
+    GLFWwindow*                     m_window;
     VkSurfaceKHR                    m_windowSurface;
 
     // << Device Extensions >>

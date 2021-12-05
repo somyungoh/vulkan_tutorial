@@ -93,6 +93,8 @@ void VulkanManager::initVulkan(GLFWwindow* window)
     PRINT_BAR_LINE();
     PRINTLN("Start initializing vulkan manager.");
 
+    m_window = window;
+
     bool result = true;
 
     // Initial Setup
@@ -100,10 +102,10 @@ void VulkanManager::initVulkan(GLFWwindow* window)
     result &= createDebugMessenger();
 
     // Presentation
-    result &= createWindowSurface(window);
+    result &= createWindowSurface();
     result &= loadPhysicalDevice();
     result &= createLogicalDevice();
-    result &= createSwapChain(window);
+    result &= createSwapChain();
     result &= createImageViews();
 
     // Graphics Pipeline
@@ -642,7 +644,7 @@ bool VulkanManager::createLogicalDevice()
 //
 // -------------------------------------------------------------------------
 
-bool VulkanManager::createWindowSurface(GLFWwindow* window)
+bool VulkanManager::createWindowSurface()
 {
     // Normally, you would create an Vulkan object for surface creation
     // (eg. VkWin32SurfaceCreateInfoKHR createInfo{} ...)
@@ -650,7 +652,7 @@ bool VulkanManager::createWindowSurface(GLFWwindow* window)
 
     PRINT_BAR_DOTS();
 
-    if (glfwCreateWindowSurface(m_VkInstance, window, nullptr, &m_windowSurface) != VK_SUCCESS)
+    if (glfwCreateWindowSurface(m_VkInstance, m_window, nullptr, &m_windowSurface) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to create window surface");
         return false;
@@ -669,7 +671,7 @@ bool VulkanManager::createWindowSurface(GLFWwindow* window)
 //
 // --------------------------------------------------------------------
 
-bool VulkanManager::createSwapChain(GLFWwindow* window)
+bool VulkanManager::createSwapChain()
 {
     PRINT_BAR_DOTS();
 
@@ -678,7 +680,7 @@ bool VulkanManager::createSwapChain(GLFWwindow* window)
     // load main swapchain settings
     VkSurfaceFormatKHR  surfaceFormat   = chooseSurfaceFormat(swapChainSupport.formats);
     VkPresentModeKHR    presentMode     = choosePresentMode(swapChainSupport.presentModes);
-    VkExtent2D          extent          = chooseExtent2D(window, swapChainSupport.surfaceCapabilities);
+    VkExtent2D          extent          = chooseExtent2D(swapChainSupport.surfaceCapabilities);
 
     // minimum #. images to have in the swap chain.
     // it is better to a little more than the minimum number, since sometimes
@@ -762,6 +764,26 @@ bool VulkanManager::createSwapChain(GLFWwindow* window)
     return true;
 }
 
+bool VulkanManager::recreateSwapChain()
+{
+    // Swapchain information can be outdated such when window size has changed.
+    // In that case, we will need to create a new swapchain.
+
+    vkDeviceWaitIdle(m_device);
+
+    cleanSwapChain();
+
+    bool result = true;
+    result &= createSwapChain();
+    result &= createImageViews();
+    result &= createRenderPass();
+    result &= createGraphicsPipeline();
+    result &= createFrameBuffers();
+    result &= createCommandBuffers();
+
+    return result;
+}
+
 SwapchainSupportDetails VulkanManager::querySwapChainSupport(VkPhysicalDevice device)
 {
     SwapchainSupportDetails details;
@@ -833,7 +855,7 @@ VkPresentModeKHR VulkanManager::choosePresentMode(const std::vector<VkPresentMod
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
-VkExtent2D VulkanManager::chooseExtent2D(GLFWwindow* window, const VkSurfaceCapabilitiesKHR& capabilities)
+VkExtent2D VulkanManager::chooseExtent2D(const VkSurfaceCapabilitiesKHR& capabilities)
 {
     // This determines the resolution of the swap chain images.
     // Most of the cases, this is almost always exactly equal to the resolution
@@ -844,7 +866,7 @@ VkExtent2D VulkanManager::chooseExtent2D(GLFWwindow* window, const VkSurfaceCapa
     else
     {
         int width, height;
-        glfwGetFramebufferSize(window, &width, &height);
+        glfwGetFramebufferSize(m_window, &width, &height);
 
         VkExtent2D actualExtent = {
             static_cast<uint32_t>(width),
@@ -1458,12 +1480,24 @@ bool VulkanManager::createSyncObjects()
     return true;
 }
 
-uint32_t VulkanManager::acquireNextImageIndex(const uint32_t frameIndex, uint32_t &nextImageIndex)
+bool VulkanManager::acquireNextImageIndex(const uint32_t frameIndex, uint32_t &nextImageIndex)
 {
-    vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, m_imageAvailableSemaphores[frameIndex],
-                          VK_NULL_HANDLE, &nextImageIndex);
+    // Returns whether the swapchain is still adequate for the presentation
+    VkResult result = vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, m_imageAvailableSemaphores[frameIndex],
+                                            VK_NULL_HANDLE, &nextImageIndex);
 
-    return nextImageIndex;
+    // Possible returns:
+    // VK_ERROR_OUT_OF_DATE_KHR: swapchain became incompatible with the surface and can no longer be used.
+    //                           usually happens due to window resizing.
+    //  VK_SUBOPTIMAL_KHR: swapchain can be still used but the properties no longer match.
+    if (result == VK_ERROR_OUT_OF_DATE_KHR)
+        recreateSwapChain();
+    else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+        throw std::runtime_error("failed to aquire swapchain images!");
+        return false;
+    }
+
+    return true;
 }
 
 bool VulkanManager::submitCommandBuffer(const uint32_t frameIndex, const uint32_t imageIndex)
@@ -1513,7 +1547,14 @@ bool VulkanManager::submitPresentation(const uint32_t frameIndex, const uint32_t
     // array of VK_RESULT that corresponds to each swapchain images
     presentationInfo.pResults           = nullptr;
 
-    vkQueuePresentKHR(m_presentationQueue, &presentationInfo);
+    VkResult result =  vkQueuePresentKHR(m_presentationQueue, &presentationInfo);
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
+        recreateSwapChain();
+    else if (result != VK_SUCCESS) {
+        throw std::runtime_error("failed to submit presentation info!");
+        return false;
+    }
+
 
     return true;
 }
@@ -1555,10 +1596,26 @@ void VulkanManager::drawFrame()
 //
 // ------------------------------------------------------------------
 
+void VulkanManager::cleanSwapChain()
+{
+    for (auto framebuffer : m_swapchainFrameBuffers)
+        vkDestroyFramebuffer(m_device, framebuffer, nullptr);
+    vkFreeCommandBuffers(m_device, m_commandPool,   // free and reuse command buffers instead of creating a new one
+                         static_cast<uint32_t>(m_commandBuffers.size()), m_commandBuffers.data());
+    vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
+    vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
+    vkDestroyRenderPass(m_device, m_renderPass, nullptr);
+    for (auto imageView : m_swapchainImageViews)
+        vkDestroyImageView(m_device, imageView, nullptr);
+    vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
+}
+
 void VulkanManager::cleanVulkan()
 {
     // wait for any remaining asyncronous operations before cleanup
     vkDeviceWaitIdle(m_device);
+
+    cleanSwapChain();
 
     // extensions must be destroyed before vulkan instance
     if (enableValidationLayers)
@@ -1569,15 +1626,6 @@ void VulkanManager::cleanVulkan()
         vkDestroyFence(m_device, m_inFlightFences[i], nullptr);
     }
     vkDestroyCommandPool(m_device, m_commandPool, nullptr);
-    for (auto framebuffer : m_swapchainFrameBuffers)
-        vkDestroyFramebuffer(m_device, framebuffer, nullptr);
-    vkDestroyRenderPass(m_device, m_renderPass, nullptr);
-    vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
-    vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
-    for (auto imageView : m_swapchainImageViews)
-        vkDestroyImageView(m_device, imageView, nullptr);
-    // swapchain is no exception
-    vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
     vkDestroyDevice(m_device, nullptr);
     vkDestroySurfaceKHR(m_VkInstance, m_windowSurface, nullptr);
     vkDestroyInstance(m_VkInstance, nullptr);
