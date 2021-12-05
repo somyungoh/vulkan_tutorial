@@ -23,7 +23,7 @@ private:
     void    cleanup();
 
     // GLFW Window
-    GLFWwindow*     m_Window;
+    GLFWwindow*     m_window;
     const uint32_t  WIDTH;
     const uint32_t  HEIGHT;
 

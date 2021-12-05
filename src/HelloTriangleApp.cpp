@@ -22,6 +22,11 @@ void HelloTriangleApp::run()
     cleanup();
 }
 
+static void framebufferResizeCallback(GLFWwindow *window, int width, int height)
+{
+    auto app = reinterpret_cast<VulkanManager*>(glfwGetWindowUserPointer(window));
+    app->setFrameBufferResized(true);
+}
 
 //::::::::::::::::::::::
 //      GLFW            
@@ -44,9 +49,13 @@ void HelloTriangleApp::initGLFW()
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
     // create window
-    m_Window = glfwCreateWindow(WIDTH, HEIGHT, "Salut Vulkan Triangle!", nullptr, nullptr);
+    m_window = glfwCreateWindow(WIDTH, HEIGHT, "Salut Vulkan Triangle!", nullptr, nullptr);
 
-    if (!m_Window)
+    // explicit window size handling for Vulkan
+    glfwSetWindowUserPointer(m_window, this);
+    glfwSetFramebufferSizeCallback(m_window, framebufferResizeCallback);
+
+    if (!m_window)
     {
         PRINTLN("Failed to initialize GLFW window");
         return;
@@ -58,13 +67,13 @@ void HelloTriangleApp::initGLFW()
 void HelloTriangleApp::initVulkanManager()
 {
     m_VulkanManager = new VulkanManager();
-    m_VulkanManager->initVulkan(m_Window);
+    m_VulkanManager->initVulkan(m_window);
 }
 
 // main event loop for GLFW
 void HelloTriangleApp::mainLoop()
 {
-    while (!glfwWindowShouldClose(m_Window))
+    while (!glfwWindowShouldClose(m_window))
     {
         glfwPollEvents();
 
@@ -81,6 +90,6 @@ void HelloTriangleApp::cleanVulkanManager()
 void HelloTriangleApp::cleanup()
 {
     cleanVulkanManager();
-    glfwDestroyWindow(m_Window);
+    glfwDestroyWindow(m_window);
     glfwTerminate();
 }

@@ -15,6 +15,7 @@ public:
 
     void    initVulkan(GLFWwindow*);
     void    drawFrame();
+    void    setFrameBufferResized(bool);
 
     void    cleanVulkan();
 
@@ -143,6 +144,7 @@ private:
 
     // << Rendering & Presentation >>
     uint32_t                        m_curretFrameIndex;
+    bool                            m_frameBufferResized;
     std::vector<VkSemaphore>        m_imageAvailableSemaphores;
     std::vector<VkSemaphore>        m_renderFinishedSemaphores;
     std::vector<VkFence>            m_inFlightFences;

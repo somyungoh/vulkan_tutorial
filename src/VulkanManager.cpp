@@ -83,7 +83,9 @@ VulkanManager::VulkanManager() :
     m_physicalDevice(VK_NULL_HANDLE),
     m_device(VK_NULL_HANDLE),
     m_validationLayers({ "VK_LAYER_KHRONOS_validation" }),
-    m_deviceExtensions({ VK_KHR_SWAPCHAIN_EXTENSION_NAME })
+    m_deviceExtensions({ VK_KHR_SWAPCHAIN_EXTENSION_NAME }),
+    m_curretFrameIndex(0),
+    m_frameBufferResized(false)
     {
     };
 
@@ -1434,6 +1436,10 @@ bool VulkanManager::createCommandBuffers()
     return result;
 }
 
+void VulkanManager::setFrameBufferResized(bool isResized)
+{
+    m_frameBufferResized = isResized;
+}
 
 // ---------------------<<  Rendering & Presentation  >>----------------------
 //
@@ -1548,8 +1554,10 @@ bool VulkanManager::submitPresentation(const uint32_t frameIndex, const uint32_t
     presentationInfo.pResults           = nullptr;
 
     VkResult result =  vkQueuePresentKHR(m_presentationQueue, &presentationInfo);
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || m_frameBufferResized) {
         recreateSwapChain();
+        m_frameBufferResized = false;
+    }
     else if (result != VK_SUCCESS) {
         throw std::runtime_error("failed to submit presentation info!");
         return false;
