@@ -102,22 +102,27 @@ void VulkanManager::initVulkan(GLFWwindow* window)
     // Initial Setup
     result &= createVulkanInstance();
     result &= createDebugMessenger();
+    PRINT_BAR_DOTS();
 
     // Presentation
     result &= createWindowSurface();
     result &= loadPhysicalDevice();
     result &= createLogicalDevice();
+    PRINT_BAR_DOTS();
     result &= createSwapChain();
     result &= createImageViews();
+    PRINT_BAR_DOTS();
 
     // Graphics Pipeline
     result &= createRenderPass();
     result &= createGraphicsPipeline();
+    PRINT_BAR_DOTS();
 
     // Drawing
     result &= createFrameBuffers();
     result &= createCommandPool();
     result &= createCommandBuffers();
+    PRINT_BAR_DOTS();
 
     // Rendering & Presentation
     result &= createSyncObjects();
@@ -143,8 +148,6 @@ bool VulkanManager::createVulkanInstance()
     // in vulkan, in many cases, data is passed through different structs
     // instead of function parameters. Each vulkan struct requires to specify
     // the type into the member 'sType'.
-
-    PRINT_BAR_DOTS();
 
     // struct: application information
     VkApplicationInfo vkAppInfo{};
@@ -285,8 +288,6 @@ bool VulkanManager::createDebugMessenger()
     if (!enableValidationLayers)
         return true;
 
-    PRINT_BAR_DOTS();
-
     VkDebugUtilsMessengerCreateInfoEXT createInfo {};
     createInfo.sType            = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
     createInfo.messageSeverity  = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT |
@@ -394,8 +395,6 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanManager::debugCallback(
 
 bool VulkanManager::loadPhysicalDevice()
 {
-    PRINT_BAR_DOTS();
-
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(m_VkInstance, &deviceCount, nullptr);
     std::vector<VkPhysicalDevice> devices(deviceCount);
@@ -565,8 +564,6 @@ QueueFamilyIndices VulkanManager::findQueueFamilies(VkPhysicalDevice device)
 
 bool VulkanManager::createLogicalDevice()
 {
-    PRINT_BAR_DOTS();
-
     // 1. specify the queue to be created
     QueueFamilyIndices indices = findQueueFamilies(m_physicalDevice);
 
@@ -634,6 +631,7 @@ bool VulkanManager::createLogicalDevice()
     vkGetDeviceQueue(m_device, indices.presentationFamily.value(), k_queueIndex, &m_presentationQueue);
 
     PRINTLN("Created logical device");
+
     return true;
 }
 
@@ -652,8 +650,6 @@ bool VulkanManager::createWindowSurface()
     // (eg. VkWin32SurfaceCreateInfoKHR createInfo{} ...)
     // however, glfw automatically handles this.
 
-    PRINT_BAR_DOTS();
-
     if (glfwCreateWindowSurface(m_VkInstance, m_window, nullptr, &m_windowSurface) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to create window surface");
@@ -661,6 +657,7 @@ bool VulkanManager::createWindowSurface()
     }
 
     PRINTLN("Created Vulkan window surface");
+
     return true;
 }
 
@@ -675,8 +672,6 @@ bool VulkanManager::createWindowSurface()
 
 bool VulkanManager::createSwapChain()
 {
-    PRINT_BAR_DOTS();
-
     SwapchainSupportDetails swapChainSupport = querySwapChainSupport(m_physicalDevice);
 
     // load main swapchain settings
@@ -775,7 +770,8 @@ bool VulkanManager::recreateSwapChain()
     int width = 0;
     int height = 0;
     glfwGetFramebufferSize(m_window, &width, &height);
-    while (width == 0 || height == 0) {
+    while (width == 0 || height == 0)
+    {
         glfwGetFramebufferSize(m_window, &width, &height);
         glfwWaitEvents();
     }
@@ -901,8 +897,6 @@ VkExtent2D VulkanManager::chooseExtent2D(const VkSurfaceCapabilitiesKHR& capabil
 
 bool VulkanManager::createImageViews()
 {
-    PRINT_BAR_DOTS();
-
     // 1. resize the array into the size of our needs. As of now,
     // the only VkImage we have is in the swapchain.
     m_swapchainImageViews.resize(m_swapchainImages.size());
@@ -956,8 +950,6 @@ bool VulkanManager::createImageViews()
 
 bool VulkanManager::createRenderPass()
 {
-    PRINT_BAR_DOTS();
-
     // 1. Attachment description
     VkAttachmentDescription colorAttachmentDescription{};
     colorAttachmentDescription.format   = m_swapchainImageFormat;   // should match with swapchain images
@@ -1045,9 +1037,6 @@ bool VulkanManager::createRenderPass()
 
 bool VulkanManager::createGraphicsPipeline()
 {
-    PRINT_BAR_DOTS();
-    PRINTLN("Create Graphics Pipeline");
-
     // 1. Load shaders
     auto vertShader = readFile("../src/shaders/vert.spv");
     auto fragShader = readFile("../src/shaders/frag.spv");
@@ -1286,8 +1275,6 @@ VkShaderModule VulkanManager::createShaderModule(const std::vector<char> &code)
 
 bool VulkanManager::createFrameBuffers()
 {
-    PRINT_BAR_DOTS();
-
     // resize as same as the swapchain imageViews
     m_swapchainFrameBuffers.resize(m_swapchainImageViews.size());
 
@@ -1335,8 +1322,6 @@ bool VulkanManager::createFrameBuffers()
 
 bool VulkanManager::createCommandPool()
 {
-    PRINT_BAR_DOTS();
-
     QueueFamilyIndices queueFamilyIndices = findQueueFamilies(m_physicalDevice);
     VkCommandPoolCreateInfo commandPoolCreateInfo{};
     commandPoolCreateInfo.sType             = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -1467,8 +1452,6 @@ bool VulkanManager::createSyncObjects()
     // "Semaphores" in the other hand, cannot be accessed by the program and it's
     // usage is mainly for syncronizing across the command queues.
 
-    PRINT_BAR_DOTS();
-
     m_imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);    // for command queue syncronization
     m_renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);    // for command queue syncronization
     m_inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);  // for CPU-GPU syncronization
@@ -1480,7 +1463,8 @@ bool VulkanManager::createSyncObjects()
     fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    {
         if (vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_imageAvailableSemaphores[i]) != VK_SUCCESS ||
             vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_renderFinishedSemaphores[i]) != VK_SUCCESS ||
             vkCreateFence(m_device, &fenceCreateInfo, nullptr, &m_inFlightFences[i]) != VK_SUCCESS)
@@ -1507,7 +1491,8 @@ bool VulkanManager::acquireNextImageIndex(const uint32_t frameIndex, uint32_t &n
     //  VK_SUBOPTIMAL_KHR: swapchain can be still used but the properties no longer match.
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
         recreateSwapChain();
-    else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+    else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+    {
         throw std::runtime_error("failed to aquire swapchain images!");
         return false;
     }
@@ -1536,7 +1521,8 @@ bool VulkanManager::submitCommandBuffer(const uint32_t frameIndex, const uint32_
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores    = signalSemaphores;
 
-    if (vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFences[frameIndex]) != VK_SUCCESS){
+    if (vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFences[frameIndex]) != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to submit command buffer!");
         return false;
     }
@@ -1563,11 +1549,13 @@ bool VulkanManager::submitPresentation(const uint32_t frameIndex, const uint32_t
     presentationInfo.pResults           = nullptr;
 
     VkResult result =  vkQueuePresentKHR(m_presentationQueue, &presentationInfo);
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || m_frameBufferResized) {
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || m_frameBufferResized)
+    {
         recreateSwapChain();
         m_frameBufferResized = false;
     }
-    else if (result != VK_SUCCESS) {
+    else if (result != VK_SUCCESS)
+    {
         throw std::runtime_error("failed to submit presentation info!");
         return false;
     }
@@ -1637,7 +1625,8 @@ void VulkanManager::cleanVulkan()
     // extensions must be destroyed before vulkan instance
     if (enableValidationLayers)
         destroyDebugUtilsMessengerEXT(m_VkInstance, &m_debugMessenger, nullptr);
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    {
         vkDestroySemaphore(m_device, m_renderFinishedSemaphores[i], nullptr);
         vkDestroySemaphore(m_device, m_imageAvailableSemaphores[i], nullptr);
         vkDestroyFence(m_device, m_inFlightFences[i], nullptr);
