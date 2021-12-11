@@ -20,6 +20,8 @@
 #endif  // defined(_WIN32) || defined(_WIN64)
 #include <GLFW/glfw3native.h>
 
+#include <glm/glm.hpp>
+
 // std
 #include <optional>
 #include <map>
@@ -27,11 +29,13 @@
 #include <cstdint>  // UINT32_MAX
 #include <algorithm>    // std::min, std::max
 #include <fstream>
+#include <array>
 
 #ifndef MAX_FRAMES_IN_FLIGHT
 #   define MAX_FRAMES_IN_FLIGHT 2
 #endif
 
+// ---------------------------< Struct definitions >-----------------------------
 struct QueueFamilyIndices
 {
     // std::optional - c++17 extension, which contains nothing until
@@ -48,6 +52,54 @@ struct SwapchainSupportDetails
    std::vector<VkSurfaceFormatKHR> formats;
    std::vector<VkPresentModeKHR> presentModes;
 };
+
+struct Vertex
+{
+    glm::vec2 pos;
+    glm::vec3 color;
+
+    // Vertex Binding: describes at which rate the vertex data should be loaded.
+    static VkVertexInputBindingDescription getBindingDesc()
+    {
+        VkVertexInputBindingDescription vertexInputBindingDesc{};
+        vertexInputBindingDesc.binding      = 0;    // index of the binding
+        vertexInputBindingDesc.stride       = sizeof(Vertex);
+        // available options are:
+        // VK_VERTEX_INPUT_RATE_VERTEX: move to next data entry after each vertex
+        // VK_VERTEX_INPUT_RATE_INSTANCE: move to next data entry after each instance
+        vertexInputBindingDesc.inputRate    = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        return vertexInputBindingDesc;
+    }
+
+    // Attribute Binding: how to extract a chunk of attribute vertex data
+    // from binding description. Here we have 2: position, color
+    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDesc()
+    {
+        std::array<VkVertexInputAttributeDescription, 2> vertexInputAttributeDesc{};
+        const int iPos = 0;
+        const int iColor = 1;
+
+        vertexInputAttributeDesc[iPos].binding  = 0;    // from which binding per-vertex comes from
+        vertexInputAttributeDesc[iPos].location = 0;    // in the shader, (location = x)
+        // common formats:
+        // float: VK_FORMAT_R32_SFLOAT
+        // vec2: VK_FORMAT_R32G32_SFLOAT
+        // vec3: VK_FORMAT_R32G32B32_SFLOAT
+        // vec4: VK_FORMAT_R32G32B32A32_SFLOAT
+        vertexInputAttributeDesc[iPos].format   = VK_FORMAT_R32G32_SFLOAT;
+        vertexInputAttributeDesc[iPos].offset   = offsetof(Vertex, pos);
+
+        vertexInputAttributeDesc[iColor].binding  = 0;    // from which binding per-vertex comes from
+        vertexInputAttributeDesc[iColor].location = 1;    // in the shader, (location = x)
+        vertexInputAttributeDesc[iColor].format   = VK_FORMAT_R32G32B32_SFLOAT;
+        vertexInputAttributeDesc[iColor].offset   = offsetof(Vertex, color);
+
+        return vertexInputAttributeDesc;
+    }
+};
+
+// -----------------------------< Utils >-----------------------------
 
 static std::vector<char> readFile(const std::string& filename)
 {
@@ -71,6 +123,14 @@ static std::vector<char> readFile(const std::string& filename)
     return buffer;
 }
 
+// -----------------------------< Hard-coded >-----------------------------
+
+const std::vector<Vertex> vertices
+{                                       // Normalized Device Coordiante (NDC):
+    { {0.0, -0.5}, {1.0, 0.0, 0.0} },   // [-1,-1]-------------[1,-1]
+    { {0.5, 0.5}, {0.0, 1.0, 0.0} },    //    |                  |
+    { {-0.5, 0.5}, {0.0, 0.0, 1.0} }    // [-1, 1]-------------[1, 1]
+};
 
 // -------------------<<  Bonjour Vulkan!  >>------------------------
 //
@@ -1069,13 +1129,14 @@ bool VulkanManager::createGraphicsPipeline()
     //    usually these were set with default values in other GraphicsAPI, but not for Vulkan, so...
 
     // 4.1 Vertex input
-    // we hard-coded these in the shader, so we'll leave 'none' for now
+    auto vertexBindingDesc = Vertex::getBindingDesc();
+    auto vertexAttributeDescs = Vertex::getAttributeDesc();
     VkPipelineVertexInputStateCreateInfo vertexInputStateCreateInfo{};
     vertexInputStateCreateInfo.sType                            = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputStateCreateInfo.vertexBindingDescriptionCount    = 0;
-    vertexInputStateCreateInfo.pVertexBindingDescriptions       = nullptr;
-    vertexInputStateCreateInfo.vertexBindingDescriptionCount    = 0;
-    vertexInputStateCreateInfo.pVertexAttributeDescriptions     = nullptr;
+    vertexInputStateCreateInfo.vertexBindingDescriptionCount    = 1;
+    vertexInputStateCreateInfo.pVertexBindingDescriptions       = &vertexBindingDesc;
+    vertexInputStateCreateInfo.vertexAttributeDescriptionCount  = vertexAttributeDescs.size();
+    vertexInputStateCreateInfo.pVertexAttributeDescriptions     = vertexAttributeDescs.data();
 
     // 4.2 Input Aseembly
     VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCreateInfo{};
