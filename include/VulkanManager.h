@@ -82,6 +82,9 @@ private:
     // << Frame Buffers >>
     bool createFrameBuffers();
 
+    // << Vertex Buffers >>
+    bool createVertexBuffers();
+
     // << Command Buffers >>
     bool createCommandPool();
     bool createCommandBuffers();
@@ -137,6 +140,9 @@ private:
 
     // << Frame Buffers >>
     std::vector<VkFramebuffer>      m_swapchainFrameBuffers;
+
+    // << Vertex Buffers >>
+    VkBuffer                        m_vertexBuffer;
 
     // << Command Buffers >>
     VkCommandPool                   m_commandPool;

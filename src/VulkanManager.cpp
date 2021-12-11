@@ -180,6 +180,7 @@ void VulkanManager::initVulkan(GLFWwindow* window)
 
     // Drawing
     result &= createFrameBuffers();
+    result &= createVertexBuffers();
     result &= createCommandPool();
     result &= createCommandBuffers();
     PRINT_BAR_DOTS();
@@ -1370,6 +1371,33 @@ bool VulkanManager::createFrameBuffers()
     return result;
 }
 
+// -------------------------<<  Vertex Buffers  >>---------------------------
+//
+//  So. Buffers, in Vulkan, is a memory where can be read from the GPU.
+//  Here it only sets vertex data but it can be an arbitrary. Unlike other
+//  Vulkan objects, this one does not automatically allocate the memory.
+//
+// --------------------------------------------------------------------------
+
+bool VulkanManager::createVertexBuffers()
+{
+    VkBufferCreateInfo bufferCreateInfo{};
+    bufferCreateInfo.sType          = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferCreateInfo.size           = sizeof(vertices[0]) * vertices.size();
+    bufferCreateInfo.usage          = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;    // purpose of the buffer
+    bufferCreateInfo.sharingMode    = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateBuffer(m_device, &bufferCreateInfo, nullptr, &m_vertexBuffer) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to create vertex buffer!");
+        return false;
+    }
+
+    PRINTLN("Created Vertex Buffers");
+
+    return true;
+}
+
 
 // ------------------------<<  Command Buffers  >>---------------------------
 //
@@ -1683,6 +1711,7 @@ void VulkanManager::cleanVulkan()
 
     cleanSwapChain();
 
+    vkDestroyBuffer(m_device, m_vertexBuffer, nullptr);
     // extensions must be destroyed before vulkan instance
     if (enableValidationLayers)
         destroyDebugUtilsMessengerEXT(m_VkInstance, &m_debugMessenger, nullptr);
