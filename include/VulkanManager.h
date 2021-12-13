@@ -83,7 +83,9 @@ private:
     bool createFrameBuffers();
 
     // << Vertex Buffers >>
-    bool createVertexBuffers();
+    bool        createVertexBuffers();
+    uint32_t    findMemoryType(uint32_t, VkMemoryPropertyFlags);
+    bool        fillVertexBuffers(VkDeviceSize bufferSize);
 
     // << Command Buffers >>
     bool createCommandPool();
@@ -143,6 +145,7 @@ private:
 
     // << Vertex Buffers >>
     VkBuffer                        m_vertexBuffer;
+    VkDeviceMemory                  m_vertexBufferMemory;
 
     // << Command Buffers >>
     VkCommandPool                   m_commandPool;

@@ -1371,6 +1371,7 @@ bool VulkanManager::createFrameBuffers()
     return result;
 }
 
+
 // -------------------------<<  Vertex Buffers  >>---------------------------
 //
 //  So. Buffers, in Vulkan, is a memory where can be read from the GPU.
@@ -1381,19 +1382,118 @@ bool VulkanManager::createFrameBuffers()
 
 bool VulkanManager::createVertexBuffers()
 {
+    // create buffer
     VkBufferCreateInfo bufferCreateInfo{};
     bufferCreateInfo.sType          = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferCreateInfo.size           = sizeof(vertices[0]) * vertices.size();
     bufferCreateInfo.usage          = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;    // purpose of the buffer
     bufferCreateInfo.sharingMode    = VK_SHARING_MODE_EXCLUSIVE;
 
+    bool result = true;
+
     if (vkCreateBuffer(m_device, &bufferCreateInfo, nullptr, &m_vertexBuffer) != VK_SUCCESS)
     {
         throw std::runtime_error("failed to create vertex buffer!");
+        result = false;
+    }
+
+    // memroy allocation
+
+    // query how much memory required for the buffer, which can be resulting
+    // differently across the GPUs.
+    // The following data is contained in the struct:
+    //  - size: size of the required memory (bytes) != bufferCreateInfo.size
+    //  - alignment: starting offset (bytes) of the allocated memory (depends on bufferCreateInfo.usage,flags)
+    //  - memoryTypeBits: memory types that are suitable for the buffer (bit field)
+    VkMemoryRequirements memoryRequirements;
+    vkGetBufferMemoryRequirements(m_device, m_vertexBuffer, &memoryRequirements);
+
+    VkMemoryAllocateInfo memoryAllocateInfo{};
+    memoryAllocateInfo.sType            = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    memoryAllocateInfo.allocationSize   = memoryRequirements.size;
+    // Different GPUs offer different memory types to allocate. We need to gather
+    // our buffer requirements & GPU capabilities to find the right memory type.
+    const uint32_t memTypeIdx = findMemoryType(memoryRequirements.memoryTypeBits,       // our memory type requirement
+                                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |    // can we write Vertex data?
+                                               VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);   // use memory heap that is host coherent
+    memoryAllocateInfo.memoryTypeIndex  = memTypeIdx;
+
+
+    if (vkAllocateMemory(m_device, &memoryAllocateInfo, nullptr, &m_vertexBufferMemory)
+        != VK_SUCCESS)
+    {
+        std::runtime_error("failed to create vertex buffers!");
+        result = false;
+    }
+
+    // the last parameter here is the offset within the region of the memory.
+    // if thw offset is non-zero, it should be divisable with memRequirements.alignment
+    if (vkBindBufferMemory(m_device, m_vertexBuffer, m_vertexBufferMemory, 0)
+        != VK_SUCCESS)
+    {
+        std::runtime_error("failed to create bind memory!");
+        result = false;
+    }
+
+    if (!fillVertexBuffers(bufferCreateInfo.size))
+    {
+        std::runtime_error("failed to fill vertex buffer!");
+        result = false;
+    }
+
+    if (result == true)
+        PRINTLN("Created Vertex Buffers");
+
+    return result;
+}
+
+uint32_t VulkanManager::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
+{
+    // VkPhysicalDeviceMemoryProperties has two arrays:
+    //  - memoryHeaps: distinct memory resources, like VRAM, swap space (in RAM used when VRAM runs out)
+    //  - memoryTypes: different types of memory within the heaps above
+    VkPhysicalDeviceMemoryProperties deviceMemoryProperties;
+    vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &deviceMemoryProperties);
+
+    for (size_t i = 0; i < deviceMemoryProperties.memoryTypeCount; ++i)
+    {
+        // two conditions to check.
+        // 1. Is memory type suitable? - marked 1 in the VkMemoryAllocateInfo's memoryTypeBits
+        // 2. Can the memory handle the required properties? (In this example, can we write Vertex data to the memory?)
+        if (typeFilter & (1 << i) &&    // corresponding bit == 1 ?
+            (deviceMemoryProperties.memoryTypes[i].propertyFlags & properties) == properties)
+            return i;
+    }
+
+    throw std::runtime_error("failed to find suitable memory type!");
+}
+
+bool VulkanManager::fillVertexBuffers(VkDeviceSize bufferSize)
+{
+    // Here we copy the vertex data to the CPU buffers.
+    // This process is called 'Mapping' which is accessible through vkMapMemory
+    void* data;
+    if (vkMapMemory(m_device,
+                    m_vertexBufferMemory,
+                    0,          // offset
+                    bufferSize, // size     (*VK_WHOLE_SIZE: map entire memory)
+                    0,          // flags
+                    &data)      // output
+        != VK_SUCCESS)
+    {
         return false;
     }
 
-    PRINTLN("Created Vertex Buffers");
+    // copy vertex data to the mapped memory
+    memcpy(data, vertices.data(), (size_t) bufferSize);
+
+    // unmap memory after usage
+    // NOTE: the driver may NOT immediately copy the data for various reasons.
+    // We handled this case by using the VK_MEMORY_PROPERTY_HOST_COHERENT_BIT flag,
+    // which ensures to use memory heap that is host coherent.
+    // Another method is calling "vkFlushMappedMemoryRanges" after write on memory,
+    // then calling "vkInvalidateMappedMemoryRanges" before reading from mappend memory.
+    vkUnmapMemory(m_device, m_vertexBufferMemory);
 
     return true;
 }
@@ -1498,11 +1598,15 @@ bool VulkanManager::createCommandBuffers()
 
         // Bind graphics pipeline
         vkCmdBindPipeline(m_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);    // graphics or compute?
+        // In our example, only contains vertex data
+        VkBuffer vertexBuffers[] = {m_vertexBuffer};
+        VkDeviceSize offsets[] = {0};
+        vkCmdBindVertexBuffers(m_commandBuffers[i], 0, 1, vertexBuffers, offsets);
 
         // 3. Record commands
         // All the functions that record commands are prefixed with vkCmd
         // (vertex count, instance count, first vertex, first instance)
-        vkCmdDraw(m_commandBuffers[i], 3, 1, 0, 0);
+        vkCmdDraw(m_commandBuffers[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0);
 
         // 4. Finish
         vkCmdEndRenderPass(m_commandBuffers[i]);
@@ -1573,7 +1677,6 @@ bool VulkanManager::acquireNextImageIndex(const uint32_t frameIndex, uint32_t &n
     // Returns whether the swapchain is still adequate for the presentation
     VkResult result = vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, m_imageAvailableSemaphores[frameIndex],
                                             VK_NULL_HANDLE, &nextImageIndex);
-
     // Possible returns:
     // VK_ERROR_OUT_OF_DATE_KHR: swapchain became incompatible with the surface and can no longer be used.
     //                           usually happens due to window resizing.
@@ -1712,6 +1815,7 @@ void VulkanManager::cleanVulkan()
     cleanSwapChain();
 
     vkDestroyBuffer(m_device, m_vertexBuffer, nullptr);
+    vkFreeMemory(m_device, m_vertexBufferMemory, nullptr);
     // extensions must be destroyed before vulkan instance
     if (enableValidationLayers)
         destroyDebugUtilsMessengerEXT(m_VkInstance, &m_debugMessenger, nullptr);
