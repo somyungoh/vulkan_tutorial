@@ -49,7 +49,7 @@ void HelloTriangleApp::initGLFW()
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
     // create window
-    m_window = glfwCreateWindow(WIDTH, HEIGHT, "Salut Vulkan Triangle!", nullptr, nullptr);
+    m_window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan Window", nullptr, nullptr);
 
     // explicit window size handling for Vulkan
     glfwSetWindowUserPointer(m_window, this);
@@ -73,11 +73,33 @@ void HelloTriangleApp::initVulkanManager()
 // main event loop for GLFW
 void HelloTriangleApp::mainLoop()
 {
+    // fps timer setup
+    bool isFirstFrame = true;
+    double prev_time = glfwGetTime();
+    uint32_t frames = 0;
+    double fps = 0;
+
     while (!glfwWindowShouldClose(m_window))
     {
         glfwPollEvents();
 
         m_VulkanManager->drawFrame();
+
+        // update FPS
+        if (frames > 10)
+        {
+            double current_time = glfwGetTime();    // ms
+            fps = (double)frames / (current_time - prev_time);
+            prev_time = current_time;
+
+            frames = 0;
+        }
+        frames++;
+
+        // display FPS in the Window title
+        char str_buffer[64];
+        sprintf(str_buffer, "Bonjour Vulkan!\t fps: %.2f", fps);
+        glfwSetWindowTitle(m_window, str_buffer);
     }
 }
 
