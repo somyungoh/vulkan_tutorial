@@ -8,6 +8,13 @@ struct QueueFamilyIndices;
 struct SwapchainSupportDetails;
 struct GLFWwindow;
 
+
+// --------------< Internal build options >--------------
+
+#define USE_STAGING_BUFFER    // see createVertexBuffer()
+
+// ------------------------------------------------------
+
 class VulkanManager
 {
 public:
@@ -83,9 +90,12 @@ private:
     bool createFrameBuffers();
 
     // << Vertex Buffers >>
+    bool        createBuffer(VkDeviceSize, VkBufferUsageFlags, VkMemoryPropertyFlags, VkBuffer&, VkDeviceMemory&);
     bool        createVertexBuffers();
     uint32_t    findMemoryType(uint32_t, VkMemoryPropertyFlags);
-    bool        fillVertexBuffers(VkDeviceSize bufferSize);
+#ifdef USE_STAGING_BUFFER
+    bool        copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize deviceSize);
+#endif
 
     // << Command Buffers >>
     bool createCommandPool();

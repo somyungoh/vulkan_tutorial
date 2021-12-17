@@ -180,8 +180,8 @@ void VulkanManager::initVulkan(GLFWwindow* window)
 
     // Drawing
     result &= createFrameBuffers();
-    result &= createVertexBuffers();
     result &= createCommandPool();
+    result &= createVertexBuffers();
     result &= createCommandBuffers();
     PRINT_BAR_DOTS();
 
@@ -1382,69 +1382,89 @@ bool VulkanManager::createFrameBuffers()
 
 bool VulkanManager::createVertexBuffers()
 {
-    // create buffer
-    VkBufferCreateInfo bufferCreateInfo{};
-    bufferCreateInfo.sType          = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferCreateInfo.size           = sizeof(vertices[0]) * vertices.size();
-    bufferCreateInfo.usage          = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;    // purpose of the buffer
-    bufferCreateInfo.sharingMode    = VK_SHARING_MODE_EXCLUSIVE;
+    // 1. Create buffer
+    //
+    // We have two choice of creating the Vertex Buffer.
+    //  1) Create in the memory accessible by the CPU, but may not be the most memory type.
+    //     The most optimal ones are usually NOT accessable by the CPU
+    //  2) Those optimal memory is availble by setting VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT flag.
+    //     Therefore, this must be done by setting up a 2-step buffer:
+    //     - Staging Buffer) CPU accessiblea memory, "staging" the vertex data
+    //     - Vertex Buffer) Final buffer, data moved from the staging buffer
+    VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
-    bool result = true;
+#ifdef USE_STAGING_BUFFER
+    PRINTLN("Vulkan will be using staging buffer.");
 
-    if (vkCreateBuffer(m_device, &bufferCreateInfo, nullptr, &m_vertexBuffer) != VK_SUCCESS)
-    {
-        throw std::runtime_error("failed to create vertex buffer!");
-        result = false;
-    }
+    VkBuffer        stagingBuffer;
+    VkDeviceMemory  stagingBufferMemory;
+    createBuffer(bufferSize,
+                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT,      // buffer can be used as a source in a memory transfer
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |  // host visible (CPU), as a temporary "staging"
+                 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 stagingBuffer,
+                 stagingBufferMemory);
+#else
+    createBuffer(bufferSize,
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,     // directly in GPU, accessible by CPU
+                 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 m_vertexBuffer,
+                 m_vertexBufferMemory);
+#endif  // USE_STAGING_BUFFER
 
-    // memroy allocation
-
-    // query how much memory required for the buffer, which can be resulting
-    // differently across the GPUs.
-    // The following data is contained in the struct:
-    //  - size: size of the required memory (bytes) != bufferCreateInfo.size
-    //  - alignment: starting offset (bytes) of the allocated memory (depends on bufferCreateInfo.usage,flags)
-    //  - memoryTypeBits: memory types that are suitable for the buffer (bit field)
-    VkMemoryRequirements memoryRequirements;
-    vkGetBufferMemoryRequirements(m_device, m_vertexBuffer, &memoryRequirements);
-
-    VkMemoryAllocateInfo memoryAllocateInfo{};
-    memoryAllocateInfo.sType            = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    memoryAllocateInfo.allocationSize   = memoryRequirements.size;
-    // Different GPUs offer different memory types to allocate. We need to gather
-    // our buffer requirements & GPU capabilities to find the right memory type.
-    const uint32_t memTypeIdx = findMemoryType(memoryRequirements.memoryTypeBits,       // our memory type requirement
-                                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |    // can we write Vertex data?
-                                               VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);   // use memory heap that is host coherent
-    memoryAllocateInfo.memoryTypeIndex  = memTypeIdx;
-
-
-    if (vkAllocateMemory(m_device, &memoryAllocateInfo, nullptr, &m_vertexBufferMemory)
+    // 2. Fill vertex buffer
+    //
+    // Here we copy the vertex data to the CPU buffers.
+    // This process is called 'Mapping' which is accessible through vkMapMemory
+    void* data;
+    if (vkMapMemory(m_device,
+#ifdef USE_STAGING_BUFFER
+                    stagingBufferMemory,
+#else
+                    m_vertexBufferMemory,
+#endif
+                    0,          // offset
+                    bufferSize, // size     (*VK_WHOLE_SIZE: map entire memory)
+                    0,          // flags
+                    &data)      // output
         != VK_SUCCESS)
-    {
-        std::runtime_error("failed to create vertex buffers!");
-        result = false;
-    }
-
-    // the last parameter here is the offset within the region of the memory.
-    // if thw offset is non-zero, it should be divisable with memRequirements.alignment
-    if (vkBindBufferMemory(m_device, m_vertexBuffer, m_vertexBufferMemory, 0)
-        != VK_SUCCESS)
-    {
-        std::runtime_error("failed to create bind memory!");
-        result = false;
-    }
-
-    if (!fillVertexBuffers(bufferCreateInfo.size))
     {
         std::runtime_error("failed to fill vertex buffer!");
-        result = false;
     }
 
-    if (result == true)
-        PRINTLN("Created Vertex Buffers");
+    // copy vertex data to the mapped memory
+    memcpy(data, vertices.data(), (size_t) bufferSize);
 
-    return result;
+    // unmap memory after usage
+    // NOTE: the driver may NOT immediately copy the data for various reasons.
+    // We handled this case by using the VK_MEMORY_PROPERTY_HOST_COHERENT_BIT flag,
+    // which ensures to use memory heap that is host coherent.
+    // Another method is calling "vkFlushMappedMemoryRanges" after write on memory,
+    // then calling "vkInvalidateMappedMemoryRanges" before reading from mappend memory.
+    vkUnmapMemory(m_device,
+#ifdef USE_STAGING_BUFFER
+                  stagingBufferMemory);
+#else
+                  m_vertexBufferMemory);
+#endif
+
+    // 3. Post Staging Buffer (Optional)
+    //
+#ifdef USE_STAGING_BUFFER
+    createBuffer(bufferSize,
+                 VK_BUFFER_USAGE_TRANSFER_DST_BIT |     // buffer can be used as destidation
+                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,   // device local (GPU), inaccessible by CPU
+                 m_vertexBuffer,
+                 m_vertexBufferMemory);
+
+    copyBuffer(stagingBuffer, m_vertexBuffer, bufferSize);
+
+    vkDestroyBuffer(m_device, stagingBuffer, nullptr);
+    vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+#endif  // USE_STAGING_BUFFER
+
+    return true;
 }
 
 uint32_t VulkanManager::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
@@ -1468,35 +1488,124 @@ uint32_t VulkanManager::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlag
     throw std::runtime_error("failed to find suitable memory type!");
 }
 
-bool VulkanManager::fillVertexBuffers(VkDeviceSize bufferSize)
+bool VulkanManager::createBuffer(VkDeviceSize bufferSize,
+                                 VkBufferUsageFlags bufferUsage,
+                                 VkMemoryPropertyFlags memoryProperties,
+                                 VkBuffer& buffer,
+                                 VkDeviceMemory& bufferMemory)
 {
-    // Here we copy the vertex data to the CPU buffers.
-    // This process is called 'Mapping' which is accessible through vkMapMemory
-    void* data;
-    if (vkMapMemory(m_device,
-                    m_vertexBufferMemory,
-                    0,          // offset
-                    bufferSize, // size     (*VK_WHOLE_SIZE: map entire memory)
-                    0,          // flags
-                    &data)      // output
-        != VK_SUCCESS)
+    // create buffer
+    VkBufferCreateInfo bufferCreateInfo{};
+    bufferCreateInfo.sType          = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferCreateInfo.size           = bufferSize;
+    bufferCreateInfo.usage          = bufferUsage;    // purpose of the buffer
+    bufferCreateInfo.sharingMode    = VK_SHARING_MODE_EXCLUSIVE;
+
+    bool result = true;
+
+    if (vkCreateBuffer(m_device, &bufferCreateInfo, nullptr, &buffer) != VK_SUCCESS)
     {
-        return false;
+        throw std::runtime_error("failed to create buffer!");
+        result = false;
     }
 
-    // copy vertex data to the mapped memory
-    memcpy(data, vertices.data(), (size_t) bufferSize);
+    // memroy allocation
 
-    // unmap memory after usage
-    // NOTE: the driver may NOT immediately copy the data for various reasons.
-    // We handled this case by using the VK_MEMORY_PROPERTY_HOST_COHERENT_BIT flag,
-    // which ensures to use memory heap that is host coherent.
-    // Another method is calling "vkFlushMappedMemoryRanges" after write on memory,
-    // then calling "vkInvalidateMappedMemoryRanges" before reading from mappend memory.
-    vkUnmapMemory(m_device, m_vertexBufferMemory);
+    // query how much memory required for the buffer, which can be resulting
+    // differently across the GPUs.
+    // The following data is contained in the struct:
+    //  - size: size of the required memory (bytes) != bufferCreateInfo.size
+    //  - alignment: starting offset (bytes) of the allocated memory (depends on bufferCreateInfo.usage,flags)
+    //  - memoryTypeBits: memory types that are suitable for the buffer (bit field)
+    VkMemoryRequirements memoryRequirements;
+    vkGetBufferMemoryRequirements(m_device, buffer, &memoryRequirements);
 
-    return true;
+    VkMemoryAllocateInfo memoryAllocateInfo{};
+    memoryAllocateInfo.sType            = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    memoryAllocateInfo.allocationSize   = memoryRequirements.size;
+    // Different GPUs offer different memory types to allocate. We need to gather
+    //our buffer requirements & GPU capabilities to find the right memory type.
+    const uint32_t memTypeIdx = findMemoryType(memoryRequirements.memoryTypeBits,       // our memory type requirement
+                                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |    // can we write Vertex data?
+                                               VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);   // use memory heap that is host coherent
+    memoryAllocateInfo.memoryTypeIndex  = memTypeIdx;
+
+    if (vkAllocateMemory(m_device, &memoryAllocateInfo, nullptr, &bufferMemory)
+        != VK_SUCCESS)
+    {
+        std::runtime_error("failed to create vertex buffers!");
+        result = false;
+    }
+
+    // the last parameter here is the offset within the region of the memory.
+    // if thw offset is non-zero, it should be divisable with memRequirements.alignment
+    if (vkBindBufferMemory(m_device, buffer, bufferMemory, 0)
+        != VK_SUCCESS)
+    {
+        std::runtime_error("failed to create bind memory!");
+        result = false;
+    }
+
+    if (result == true)
+        PRINTLN("Created a new buffer");
+
+    return result;
 }
+
+#ifdef USE_STAGING_BUFFER
+bool VulkanManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize deviceSize)
+{
+    // Copies the buffer one to another.
+
+    bool result = true;
+
+    // Memory transfer is also done through the command buffer, so we create another
+    // one-time short usage command buffer here
+    VkCommandBufferAllocateInfo cmdBufferAllocateInfo{};
+    cmdBufferAllocateInfo.sType                 = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cmdBufferAllocateInfo.level                 = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cmdBufferAllocateInfo.commandPool           = m_commandPool;
+    cmdBufferAllocateInfo.commandBufferCount    = 1;
+
+    VkCommandBuffer cmdBuffer;
+    if (vkAllocateCommandBuffers(m_device, &cmdBufferAllocateInfo, &cmdBuffer) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to allocate command buffer!");
+        result = false;
+    }
+
+    VkCommandBufferBeginInfo cmdBufferBeginInfo{};
+    cmdBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    cmdBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; // use once, wait until finishing execution
+
+    // start filling command buffer
+    vkBeginCommandBuffer(cmdBuffer, &cmdBufferBeginInfo);
+
+    // copy command
+    VkBufferCopy copyRegion{};
+    copyRegion.size      = deviceSize;
+    copyRegion.srcOffset = 0;   // optional
+    copyRegion.dstOffset = 0;   // optional
+    vkCmdCopyBuffer(cmdBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+
+    vkEndCommandBuffer(cmdBuffer);
+
+    // Execute command buffer
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount   = 1;
+    submitInfo.pCommandBuffers      = &cmdBuffer;
+    vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+
+    // no other event to wait for here, execute immediately
+    vkQueueWaitIdle(m_graphicsQueue);   // or use vkWaitForFences
+
+    // cleanup command buffer
+    vkFreeCommandBuffers(m_device, m_commandPool, 1, &cmdBuffer);
+
+    return result;
+}
+#endif
 
 
 // ------------------------<<  Command Buffers  >>---------------------------
@@ -1627,6 +1736,7 @@ void VulkanManager::setFrameBufferResized(bool isResized)
 {
     m_frameBufferResized = isResized;
 }
+
 
 // ---------------------<<  Rendering & Presentation  >>----------------------
 //
