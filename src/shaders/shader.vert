@@ -10,6 +10,13 @@
 //        homogeneous coordinates obtained by dividing in 4th element.
 // ---------------------------------------------------------------------
 
+// gloabl
+layout(binding = 0) uniform UniformBufferObject {
+    mat4 model;
+    mat4 view;
+    mat4 proj;
+} ubo;
+
 // input/output variables
 layout(location = 0) in vec2 inPosition;
 layout(location = 1) in vec3 inColor;
@@ -21,6 +28,6 @@ layout(location = 0) out vec3 fragColor;
 void main()
 {
     // The last component is 1, so that it can be directly used as NDC
-    gl_Position = vec4(inPosition, 0.0, 1.0);
+    gl_Position = ubo.proj * ubo.view * ubo.model * vec4(inPosition, 0.0, 1.0);
     fragColor = inColor;
 }

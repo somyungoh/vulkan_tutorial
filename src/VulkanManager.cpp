@@ -31,9 +31,12 @@
 #include <fstream>
 #include <array>
 
-#ifndef MAX_FRAMES_IN_FLIGHT
-#   define MAX_FRAMES_IN_FLIGHT 2
-#endif
+
+// --------------------------< Internal build options >--------------------------
+
+#define MAX_FRAMES_IN_FLIGHT 2
+#define USE_STAGING_BUFFER    // see createVertexBuffer()
+
 
 // ---------------------------< Struct definitions >-----------------------------
 struct QueueFamilyIndices
@@ -98,6 +101,14 @@ struct Vertex
         return vertexInputAttributeDesc;
     }
 };
+
+struct UniformBufferObject
+{
+    glm::mat4 model;
+    glm::mat4 view;
+    glm::mat4 proj;
+};
+
 
 // -----------------------------< Utils >-----------------------------
 
@@ -182,6 +193,7 @@ void VulkanManager::initVulkan(GLFWwindow* window)
 
     // Graphics Pipeline
     result &= createRenderPass();
+    result &= createDescriptorSetLayout();
     result &= createGraphicsPipeline();
     PRINT_BAR_DOTS();
 
@@ -1089,6 +1101,44 @@ bool VulkanManager::createRenderPass()
     return true;
 }
 
+// -----------------------<<  Descriptor Layout  >>--------------------------
+//
+//  A 'Descriptor', lets Shaders to freely access resources, such as buffers
+//  and images. The 'Descriptor Layout', specifies the type of resources
+//  that are going to be accessed by the pipeline. 'Descriptor Set',
+//  specifies the actual buffer or image resources that will be bound to the
+//  descriptors.
+//
+// --------------------------------------------------------------------------
+
+bool VulkanManager::createDescriptorSetLayout()
+{
+    // Uniform Buffer Object (UBO) is one of the available descriptors
+    VkDescriptorSetLayoutBinding uboLayoutBinding{};
+    uboLayoutBinding.binding            = 0;
+    uboLayoutBinding.descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    // it is possible specifify an array of UBO (ex. skeleton animation) and
+    // the number of values in the array. Here we just have one - UBO
+    uboLayoutBinding.descriptorCount    = 1;
+    uboLayoutBinding.stageFlags         = VK_SHADER_STAGE_VERTEX_BIT;
+    uboLayoutBinding.pImmutableSamplers = nullptr;  // optional
+
+    VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo{};
+    descriptorSetLayoutInfo.sType           = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    descriptorSetLayoutInfo.bindingCount    = 1;
+    descriptorSetLayoutInfo.pBindings       = &uboLayoutBinding;
+
+    if (vkCreateDescriptorSetLayout(m_device, &descriptorSetLayoutInfo, nullptr, &m_descriptorSetLayout)
+        != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to create descriptor set layout!");
+        return false;
+    };
+
+    PRINTLN("Created Descriptor Layout");
+
+    return true;
+}
 
 // ----------------------<<  Graphics Pipepline  >>--------------------------
 //
@@ -1252,9 +1302,9 @@ bool VulkanManager::createGraphicsPipeline()
     // In practice, transform matrices are usually passed through this.
     VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo{};
     pipelineLayoutCreateInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutCreateInfo.setLayoutCount         = 0;    // optional
-    pipelineLayoutCreateInfo.pSetLayouts            = nullptr;  // optional
-    pipelineLayoutCreateInfo.pushConstantRangeCount = 0;    // optional
+    pipelineLayoutCreateInfo.setLayoutCount         = 1;        // optional
+    pipelineLayoutCreateInfo.pSetLayouts            = &m_descriptorSetLayout;  // optional
+    pipelineLayoutCreateInfo.pushConstantRangeCount = 0;        // optional
     pipelineLayoutCreateInfo.pPushConstantRanges    = nullptr;  // optional
 
     // this is a manatory field to register even though we leave blank, so
@@ -1618,13 +1668,13 @@ bool VulkanManager::createIndexBuffer()
     return true;
 }
 
-#ifdef USE_STAGING_BUFFER
 bool VulkanManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize deviceSize)
 {
     // Copies the buffer one to another.
 
     bool result = true;
 
+#ifdef USE_STAGING_BUFFER
     // Memory transfer is also done through the command buffer, so we create another
     // one-time short usage command buffer here
     VkCommandBufferAllocateInfo cmdBufferAllocateInfo{};
@@ -1668,10 +1718,10 @@ bool VulkanManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceS
 
     // cleanup command buffer
     vkFreeCommandBuffers(m_device, m_commandPool, 1, &cmdBuffer);
+#endif
 
     return result;
 }
-#endif
 
 
 // ------------------------<<  Command Buffers  >>---------------------------
@@ -1991,6 +2041,7 @@ void VulkanManager::cleanVulkan()
 
     cleanSwapChain();
 
+    vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout, nullptr);
     vkDestroyBuffer(m_device, m_vertexBuffer, nullptr);
     vkFreeMemory(m_device, m_vertexBufferMemory, nullptr);
     vkDestroyBuffer(m_device, m_indexBuffer, nullptr);

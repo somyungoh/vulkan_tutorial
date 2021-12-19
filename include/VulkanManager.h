@@ -9,12 +9,6 @@ struct SwapchainSupportDetails;
 struct GLFWwindow;
 
 
-// --------------< Internal build options >--------------
-
-#define USE_STAGING_BUFFER    // see createVertexBuffer()
-
-// ------------------------------------------------------
-
 class VulkanManager
 {
 public:
@@ -79,6 +73,9 @@ private:
     // << Image Views >>
     bool createImageViews();
 
+    // << Descriptor Layout >>
+    bool            createDescriptorSetLayout();
+
     // << Graphics Pipeline >>
     bool            createGraphicsPipeline();
     VkShaderModule  createShaderModule(const std::vector<char>&);
@@ -94,9 +91,7 @@ private:
     bool        createVertexBuffer();
     bool        createIndexBuffer();
     uint32_t    findMemoryType(uint32_t, VkMemoryPropertyFlags);
-#ifdef USE_STAGING_BUFFER
     bool        copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize deviceSize);
-#endif
 
     // << Command Buffers >>
     bool createCommandPool();
@@ -148,6 +143,7 @@ private:
     VkRenderPass                    m_renderPass;
 
     // << Graphics Pipeline >>
+    VkDescriptorSetLayout           m_descriptorSetLayout;
     VkPipelineLayout                m_pipelineLayout;
     VkPipeline                      m_graphicsPipeline;
 
