@@ -127,9 +127,16 @@ static std::vector<char> readFile(const std::string& filename)
 
 const std::vector<Vertex> vertices
 {                                       // Normalized Device Coordiante (NDC):
-    { {0.0, -0.5}, {1.0, 0.0, 0.0} },   // [-1,-1]-------------[1,-1]
+    { {-0.5, -0.5}, {1.0, 0.0, 0.0} },  // [-1,-1]-------------[1,-1]
+    { {0.5, -0.5}, {0.0, 1.0, 0.0} },   //    |                  |
     { {0.5, 0.5}, {0.0, 1.0, 0.0} },    //    |                  |
     { {-0.5, 0.5}, {0.0, 0.0, 1.0} }    // [-1, 1]-------------[1, 1]
+};
+
+const std::vector<uint32_t> indices
+{
+    0, 1, 2,    // triangle 1
+    2, 3, 0     // triangle 2
 };
 
 // -------------------<<  Bonjour Vulkan!  >>------------------------
@@ -181,7 +188,8 @@ void VulkanManager::initVulkan(GLFWwindow* window)
     // Drawing
     result &= createFrameBuffers();
     result &= createCommandPool();
-    result &= createVertexBuffers();
+    result &= createVertexBuffer();
+    result &= createIndexBuffer();
     result &= createCommandBuffers();
     PRINT_BAR_DOTS();
 
@@ -1380,7 +1388,7 @@ bool VulkanManager::createFrameBuffers()
 //
 // --------------------------------------------------------------------------
 
-bool VulkanManager::createVertexBuffers()
+bool VulkanManager::createVertexBuffer()
 {
     // 1. Create buffer
     //
@@ -1464,6 +1472,8 @@ bool VulkanManager::createVertexBuffers()
     vkFreeMemory(m_device, stagingBufferMemory, nullptr);
 #endif  // USE_STAGING_BUFFER
 
+    PRINTLN("Created Vertex Buffer");
+
     return true;
 }
 
@@ -1530,6 +1540,9 @@ bool VulkanManager::createBuffer(VkDeviceSize bufferSize,
                                                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);   // use memory heap that is host coherent
     memoryAllocateInfo.memoryTypeIndex  = memTypeIdx;
 
+    // NOTE: this (vkAllocateMemory) is not actually allowed in practice for every individual buffer.
+    // usually the size is limited by maxMemoryAllocationCount, and supposed to create a custom
+    // allocator that splits a single allocator to different objects
     if (vkAllocateMemory(m_device, &memoryAllocateInfo, nullptr, &bufferMemory)
         != VK_SUCCESS)
     {
@@ -1546,10 +1559,63 @@ bool VulkanManager::createBuffer(VkDeviceSize bufferSize,
         result = false;
     }
 
-    if (result == true)
-        PRINTLN("Created a new buffer");
-
     return result;
+}
+
+bool VulkanManager::createIndexBuffer()
+{
+    VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
+
+#ifdef USE_STAGING_BUFFER
+    VkBuffer        stagingBuffer;
+    VkDeviceMemory  stagingBufferMemory;
+    createBuffer(bufferSize,
+                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 stagingBuffer,
+                 stagingBufferMemory);
+#else
+    createBuffer(bufferSize,
+                 VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                 m_indexBuffer,
+                 m_indexBufferMemory);
+#endif  // USE_STAGING_BUFFER
+
+    void* data;
+    vkMapMemory(m_device,
+#ifdef USE_STAGING_BUFFER
+                stagingBufferMemory,
+#else
+                m_indexBufferMemory
+#endif
+                0,
+                bufferSize,
+                0,
+                &data);
+    memcpy(data, indices.data(), (size_t)bufferSize);
+    vkUnmapMemory(m_device,
+#ifdef USE_STAGING_BUFFER
+                  stagingBufferMemory);
+#else
+                  m_indexBufferMemory);
+#endif
+
+#ifdef USE_STAGING_BUFFER
+    createBuffer(bufferSize,
+                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                 m_indexBuffer,
+                 m_indexBufferMemory);
+    copyBuffer(stagingBuffer, m_indexBuffer, bufferSize);
+
+    vkDestroyBuffer(m_device, stagingBuffer, nullptr);
+    vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+#endif
+
+    PRINTLN("Created Index Buffer");
+
+    return true;
 }
 
 #ifdef USE_STAGING_BUFFER
@@ -1711,11 +1777,12 @@ bool VulkanManager::createCommandBuffers()
         VkBuffer vertexBuffers[] = {m_vertexBuffer};
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(m_commandBuffers[i], 0, 1, vertexBuffers, offsets);
+        vkCmdBindIndexBuffer(m_commandBuffers[i], m_indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
         // 3. Record commands
         // All the functions that record commands are prefixed with vkCmd
         // (vertex count, instance count, first vertex, first instance)
-        vkCmdDraw(m_commandBuffers[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0);
+        vkCmdDrawIndexed(m_commandBuffers[i], static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
         // 4. Finish
         vkCmdEndRenderPass(m_commandBuffers[i]);
@@ -1926,6 +1993,8 @@ void VulkanManager::cleanVulkan()
 
     vkDestroyBuffer(m_device, m_vertexBuffer, nullptr);
     vkFreeMemory(m_device, m_vertexBufferMemory, nullptr);
+    vkDestroyBuffer(m_device, m_indexBuffer, nullptr);
+    vkFreeMemory(m_device, m_indexBufferMemory, nullptr);
     // extensions must be destroyed before vulkan instance
     if (enableValidationLayers)
         destroyDebugUtilsMessengerEXT(m_VkInstance, &m_debugMessenger, nullptr);

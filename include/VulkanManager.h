@@ -91,7 +91,8 @@ private:
 
     // << Vertex Buffers >>
     bool        createBuffer(VkDeviceSize, VkBufferUsageFlags, VkMemoryPropertyFlags, VkBuffer&, VkDeviceMemory&);
-    bool        createVertexBuffers();
+    bool        createVertexBuffer();
+    bool        createIndexBuffer();
     uint32_t    findMemoryType(uint32_t, VkMemoryPropertyFlags);
 #ifdef USE_STAGING_BUFFER
     bool        copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize deviceSize);
@@ -156,6 +157,8 @@ private:
     // << Vertex Buffers >>
     VkBuffer                        m_vertexBuffer;
     VkDeviceMemory                  m_vertexBufferMemory;
+    VkBuffer                        m_indexBuffer;
+    VkDeviceMemory                  m_indexBufferMemory;
 
     // << Command Buffers >>
     VkCommandPool                   m_commandPool;
