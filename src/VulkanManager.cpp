@@ -20,16 +20,20 @@
 #endif  // defined(_WIN32) || defined(_WIN64)
 #include <GLFW/glfw3native.h>
 
+// glm
+#define GLM_FORCE_RADIANS   // use radians by default on any parameters
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 // std
 #include <optional>
 #include <map>
 #include <set>
-#include <cstdint>  // UINT32_MAX
+#include <cstdint>      // UINT32_MAX
 #include <algorithm>    // std::min, std::max
 #include <fstream>
 #include <array>
+#include <chrono>
 
 
 // --------------------------< Internal build options >--------------------------
@@ -202,6 +206,7 @@ void VulkanManager::initVulkan(GLFWwindow* window)
     result &= createCommandPool();
     result &= createVertexBuffer();
     result &= createIndexBuffer();
+    result &= createUniformBuffers();
     result &= createCommandBuffers();
     PRINT_BAR_DOTS();
 
@@ -867,6 +872,7 @@ bool VulkanManager::recreateSwapChain()
     result &= createRenderPass();
     result &= createGraphicsPipeline();
     result &= createFrameBuffers();
+    result &= createUniformBuffers();
     result &= createCommandBuffers();
 
     return result;
@@ -1554,7 +1560,8 @@ bool VulkanManager::createBuffer(VkDeviceSize bufferSize,
                                  VkBuffer& buffer,
                                  VkDeviceMemory& bufferMemory)
 {
-    // create buffer
+    // Create buffer
+    //
     VkBufferCreateInfo bufferCreateInfo{};
     bufferCreateInfo.sType          = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferCreateInfo.size           = bufferSize;
@@ -1569,8 +1576,8 @@ bool VulkanManager::createBuffer(VkDeviceSize bufferSize,
         result = false;
     }
 
-    // memroy allocation
-
+    // Memory allocation
+    //
     // query how much memory required for the buffer, which can be resulting
     // differently across the GPUs.
     // The following data is contained in the struct:
@@ -1721,6 +1728,31 @@ bool VulkanManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceS
 #endif
 
     return result;
+}
+
+bool VulkanManager::createUniformBuffers()
+{
+    // Multiple Uniform Buffers are required, because multiple frames can be 'in flight'
+    // and we shouldn't modify the buffer in preparation while the other is in use.
+    // We can either create the Uniform Buffer per-frame or per-swapcahin image. However,
+    // since we are referring the Uniform Buffer from the Command Buffer that exists per-
+    // swapchian image.
+    m_uniformBuffers.resize(m_swapchainImages.size());
+    m_uniformBuffersMemory.resize(m_swapchainImages.size());
+
+    VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+    for (size_t i = 0; i < m_swapchainImages.size(); ++i)
+    {
+        createBuffer(bufferSize,
+                     VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                     m_uniformBuffers[i],
+                     m_uniformBuffersMemory[i]);
+    }
+
+    PRINTLN("Created Uniform Buffer");
+
+    return true;
 }
 
 
@@ -1983,11 +2015,32 @@ bool VulkanManager::submitPresentation(const uint32_t frameIndex, const uint32_t
     return true;
 }
 
+void VulkanManager::updateUniformBuffer(uint32_t currentImangeIdx)
+{
+    static auto startTime = std::chrono::high_resolution_clock::now();
+    auto        currentTime = std::chrono::high_resolution_clock::now();
+    float       dt = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+
+    UniformBufferObject ubo{};
+    ubo.model = glm::rotate(glm::mat4(1.0f), dt * glm::radians(90.f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.view = glm::lookAt(glm::vec3(2.0f), glm::vec3(0.0), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.proj = glm::perspective(glm::radians(45.f), m_swapchainExtent.width / (float)m_swapchainExtent.height, 0.1f, 10.f);
+    ubo.proj[1][1] *= -1;   // flip Y-axis (because glm was designed for OpenGL)
+
+    // apply transformation
+    void* data;
+    vkMapMemory(m_device, m_uniformBuffersMemory[currentImangeIdx], 0, sizeof(ubo), 0, &data);
+    memcpy(data, &ubo, sizeof(ubo));
+    vkUnmapMemory(m_device, m_uniformBuffersMemory[currentImangeIdx]);
+}
+
 void VulkanManager::drawFrame()
 {
     m_curretFrameIndex = (m_curretFrameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
     uint32_t imgIndex;
     acquireNextImageIndex(m_curretFrameIndex, imgIndex);
+
+    updateUniformBuffer(m_curretFrameIndex);
 
     // CPU - GPU syncronization.
     // Normally at this point, GPU work speed cannot follow up the CPU work
@@ -2032,6 +2085,10 @@ void VulkanManager::cleanSwapChain()
     for (auto imageView : m_swapchainImageViews)
         vkDestroyImageView(m_device, imageView, nullptr);
     vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
+    for (size_t i = 0; i < m_swapchainImages.size(); ++i) {
+        vkDestroyBuffer(m_device, m_uniformBuffers[i], nullptr);
+        vkFreeMemory(m_device, m_uniformBuffersMemory[i], nullptr);
+    }
 }
 
 void VulkanManager::cleanVulkan()

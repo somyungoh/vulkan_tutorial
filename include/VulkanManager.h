@@ -20,6 +20,8 @@ public:
 
     void    cleanVulkan();
 
+private:
+    void    updateUniformBuffer(uint32_t currentImageIdx);
 
 private:
     bool                        createVulkanInstance();
@@ -90,6 +92,7 @@ private:
     bool        createBuffer(VkDeviceSize, VkBufferUsageFlags, VkMemoryPropertyFlags, VkBuffer&, VkDeviceMemory&);
     bool        createVertexBuffer();
     bool        createIndexBuffer();
+    bool        createUniformBuffers();
     uint32_t    findMemoryType(uint32_t, VkMemoryPropertyFlags);
     bool        copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize deviceSize);
 
@@ -155,6 +158,10 @@ private:
     VkDeviceMemory                  m_vertexBufferMemory;
     VkBuffer                        m_indexBuffer;
     VkDeviceMemory                  m_indexBufferMemory;
+
+    // << Uniform Buffers >>
+    std::vector<VkBuffer>           m_uniformBuffers;
+    std::vector<VkDeviceMemory>     m_uniformBuffersMemory;
 
     // << Command Buffers >>
     VkCommandPool                   m_commandPool;
