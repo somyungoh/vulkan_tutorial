@@ -207,6 +207,8 @@ void VulkanManager::initVulkan(GLFWwindow* window)
     result &= createVertexBuffer();
     result &= createIndexBuffer();
     result &= createUniformBuffers();
+    result &= createDescriptorPool();
+    result &= createDescriptorSets();
     result &= createCommandBuffers();
     PRINT_BAR_DOTS();
 
@@ -873,6 +875,8 @@ bool VulkanManager::recreateSwapChain()
     result &= createGraphicsPipeline();
     result &= createFrameBuffers();
     result &= createUniformBuffers();
+    result &= createDescriptorPool();
+    result &= createDescriptorSets();
     result &= createCommandBuffers();
 
     return result;
@@ -1146,6 +1150,85 @@ bool VulkanManager::createDescriptorSetLayout()
     return true;
 }
 
+bool VulkanManager::createDescriptorPool()
+{
+    // Descriptor Pool
+    //
+    // Descriptor Sets CANNOT be created directly, it needs to be allocated through a pool
+    // just like command buffers.
+
+    VkDescriptorPoolSize descriptorPoolSize{};
+    descriptorPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorPoolSize.descriptorCount = static_cast<uint32_t>(m_swapchainImages.size());
+
+    VkDescriptorPoolCreateInfo descriptorPoolInfo{};
+    descriptorPoolInfo.sType            = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    descriptorPoolInfo.poolSizeCount    = 1;
+    descriptorPoolInfo.pPoolSizes       = &descriptorPoolSize;
+    descriptorPoolInfo.maxSets          = static_cast<uint32_t>(m_swapchainImages.size());
+
+    if (vkCreateDescriptorPool(m_device, &descriptorPoolInfo, nullptr, &m_descriptorPool)
+        != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to create descriptor pool!");
+        return false;
+    }
+
+    PRINTLN("Created Descriptor Pool");
+
+    return true;
+}
+
+bool VulkanManager::createDescriptorSets()
+{
+    bool result = true;
+
+    std::vector<VkDescriptorSetLayout> layouts(m_swapchainImages.size(), m_descriptorSetLayout);
+
+    VkDescriptorSetAllocateInfo descriptorSetAllocInfo{};
+    descriptorSetAllocInfo.sType                = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    descriptorSetAllocInfo.descriptorPool       = m_descriptorPool;
+    descriptorSetAllocInfo.descriptorSetCount   = static_cast<uint32_t>(m_swapchainImages.size());
+    descriptorSetAllocInfo.pSetLayouts          = layouts.data();
+
+    m_descriptorSets.resize(m_swapchainImages.size());
+    if (vkAllocateDescriptorSets(m_device, &descriptorSetAllocInfo, m_descriptorSets.data())
+        != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to allocate descriptor sets!");
+        result = false;
+    }
+
+    for (size_t i = 0; i < m_swapchainImages.size(); ++i)
+    {
+        // specifies buffer and the region
+        VkDescriptorBufferInfo descriptorBufferInfo{};
+        descriptorBufferInfo.buffer = m_uniformBuffers[i];
+        descriptorBufferInfo.offset = 0;
+        descriptorBufferInfo.range  = sizeof(UniformBufferObject);
+
+        // descriptor set configuration
+        VkWriteDescriptorSet writeDescriptorSet{};
+        writeDescriptorSet.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writeDescriptorSet.dstSet           = m_descriptorSets[i];
+        writeDescriptorSet.dstBinding       = 0;
+        writeDescriptorSet.dstArrayElement  = 0;    // descriptor can be arrays, yet in our case is 0
+        writeDescriptorSet.descriptorType   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writeDescriptorSet.descriptorCount  = 1;
+        writeDescriptorSet.pBufferInfo      = &descriptorBufferInfo;
+        writeDescriptorSet.pImageInfo       = nullptr;  // optional
+        writeDescriptorSet.pTexelBufferView = nullptr;  // optional
+
+        vkUpdateDescriptorSets(m_device, 1, &writeDescriptorSet, 0, nullptr);
+    }
+
+    if (result == true)
+        PRINTLN("Created Descriptor Sets");
+
+    return result;
+}
+
+
 // ----------------------<<  Graphics Pipepline  >>--------------------------
 //
 //  Graphics Pipeline: from vertex/textures to pixels in the Render Targets.
@@ -1235,13 +1318,13 @@ bool VulkanManager::createGraphicsPipeline()
     // 4.5 Rasterizer
     VkPipelineRasterizationStateCreateInfo rasterizationStateCreateInfo{};
     rasterizationStateCreateInfo.sType                      = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterizationStateCreateInfo.depthClampEnable           = VK_FALSE; // clamp range beyond near/far plane
-    rasterizationStateCreateInfo.rasterizerDiscardEnable    = VK_FALSE; // don't let geometry to pass the rasterizer, and won't display on framebuffer
-    rasterizationStateCreateInfo.polygonMode                = VK_POLYGON_MODE_FILL; // _LINE / _POINT (these two requires GPU feature)
-    rasterizationStateCreateInfo.lineWidth                  = 1.0f; // thickness of lines covering the fragment. Larger than 1.0 requires GPU feature
+    rasterizationStateCreateInfo.depthClampEnable           = VK_FALSE;                 // clamp range beyond near/far plane
+    rasterizationStateCreateInfo.rasterizerDiscardEnable    = VK_FALSE;                 // don't let geometry to pass the rasterizer, and won't display on framebuffer
+    rasterizationStateCreateInfo.polygonMode                = VK_POLYGON_MODE_FILL;     // _LINE / _POINT (these two requires GPU feature)
+    rasterizationStateCreateInfo.lineWidth                  = 1.0f;                     // thickness of lines covering the fragment. Larger than 1.0 requires GPU feature
     rasterizationStateCreateInfo.cullMode                   = VK_CULL_MODE_BACK_BIT;    // back-face culling
-    rasterizationStateCreateInfo.frontFace                  = VK_FRONT_FACE_CLOCKWISE;  // vertex oreder of the front face
-    rasterizationStateCreateInfo.depthBiasEnable            = VK_FALSE; // set true - adjust depth values through the values below
+    rasterizationStateCreateInfo.frontFace                  = VK_FRONT_FACE_COUNTER_CLOCKWISE;  // vertex oreder of the front face
+    rasterizationStateCreateInfo.depthBiasEnable            = VK_FALSE;                 // set true - adjust depth values through the values below
     rasterizationStateCreateInfo.depthBiasConstantFactor    = 0.0f;
     rasterizationStateCreateInfo.depthBiasClamp             = 0.0f;
     rasterizationStateCreateInfo.depthBiasSlopeFactor       = 0.0f;
@@ -1864,6 +1947,7 @@ bool VulkanManager::createCommandBuffers()
         // 3. Record commands
         // All the functions that record commands are prefixed with vkCmd
         // (vertex count, instance count, first vertex, first instance)
+        vkCmdBindDescriptorSets(m_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1 , &m_descriptorSets[i], 0, nullptr);
         vkCmdDrawIndexed(m_commandBuffers[i], static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
         // 4. Finish
@@ -2040,7 +2124,7 @@ void VulkanManager::drawFrame()
     uint32_t imgIndex;
     acquireNextImageIndex(m_curretFrameIndex, imgIndex);
 
-    updateUniformBuffer(m_curretFrameIndex);
+    updateUniformBuffer(imgIndex);
 
     // CPU - GPU syncronization.
     // Normally at this point, GPU work speed cannot follow up the CPU work
@@ -2089,6 +2173,7 @@ void VulkanManager::cleanSwapChain()
         vkDestroyBuffer(m_device, m_uniformBuffers[i], nullptr);
         vkFreeMemory(m_device, m_uniformBuffersMemory[i], nullptr);
     }
+    vkDestroyDescriptorPool(m_device, m_descriptorPool, nullptr);
 }
 
 void VulkanManager::cleanVulkan()

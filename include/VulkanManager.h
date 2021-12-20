@@ -77,6 +77,8 @@ private:
 
     // << Descriptor Layout >>
     bool            createDescriptorSetLayout();
+    bool            createDescriptorPool();
+    bool            createDescriptorSets();
 
     // << Graphics Pipeline >>
     bool            createGraphicsPipeline();
@@ -145,8 +147,12 @@ private:
     // << Render Pass >>
     VkRenderPass                    m_renderPass;
 
-    // << Graphics Pipeline >>
+    // << Descriptors >>
     VkDescriptorSetLayout           m_descriptorSetLayout;
+    VkDescriptorPool                m_descriptorPool;
+    std::vector<VkDescriptorSet>    m_descriptorSets;
+
+    // << Graphics Pipeline >>
     VkPipelineLayout                m_pipelineLayout;
     VkPipeline                      m_graphicsPipeline;
 
