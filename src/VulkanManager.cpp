@@ -20,20 +20,27 @@
 #endif  // defined(_WIN32) || defined(_WIN64)
 #include <GLFW/glfw3native.h>
 
+// glm
+#define GLM_FORCE_RADIANS   // use radians by default on any parameters
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 // std
 #include <optional>
 #include <map>
 #include <set>
-#include <cstdint>  // UINT32_MAX
+#include <cstdint>      // UINT32_MAX
 #include <algorithm>    // std::min, std::max
 #include <fstream>
 #include <array>
+#include <chrono>
 
-#ifndef MAX_FRAMES_IN_FLIGHT
-#   define MAX_FRAMES_IN_FLIGHT 2
-#endif
+
+// --------------------------< Internal build options >--------------------------
+
+#define MAX_FRAMES_IN_FLIGHT 2
+#define USE_STAGING_BUFFER    // see createVertexBuffer()
+
 
 // ---------------------------< Struct definitions >-----------------------------
 struct QueueFamilyIndices
@@ -98,6 +105,22 @@ struct Vertex
         return vertexInputAttributeDesc;
     }
 };
+
+struct UniformBufferObject
+{
+    // Data alignment: Vulkan requires the memory to be aligned in a specific way:
+    // scalar(4) vec2(8) vec3/vec4/mat4(16), nested struct(x*16) in bytes
+    // So, here we use the alignas(C++11 feature) to make sure mat4 is aligned 16.
+    // It doesn't matter just like this (i.e already aligned 16,16,16 bytes) but it
+    // can be easily broken down by adding any other components such as vec2.
+    alignas(16)
+    glm::mat4 model;
+    alignas(16)
+    glm::mat4 view;
+    alignas(16)
+    glm::mat4 proj;
+};
+
 
 // -----------------------------< Utils >-----------------------------
 
@@ -182,6 +205,7 @@ void VulkanManager::initVulkan(GLFWwindow* window)
 
     // Graphics Pipeline
     result &= createRenderPass();
+    result &= createDescriptorSetLayout();
     result &= createGraphicsPipeline();
     PRINT_BAR_DOTS();
 
@@ -190,6 +214,9 @@ void VulkanManager::initVulkan(GLFWwindow* window)
     result &= createCommandPool();
     result &= createVertexBuffer();
     result &= createIndexBuffer();
+    result &= createUniformBuffers();
+    result &= createDescriptorPool();
+    result &= createDescriptorSets();
     result &= createCommandBuffers();
     PRINT_BAR_DOTS();
 
@@ -855,6 +882,9 @@ bool VulkanManager::recreateSwapChain()
     result &= createRenderPass();
     result &= createGraphicsPipeline();
     result &= createFrameBuffers();
+    result &= createUniformBuffers();
+    result &= createDescriptorPool();
+    result &= createDescriptorSets();
     result &= createCommandBuffers();
 
     return result;
@@ -1089,6 +1119,123 @@ bool VulkanManager::createRenderPass()
     return true;
 }
 
+// -----------------------<<  Descriptor Layout  >>--------------------------
+//
+//  A 'Descriptor', lets Shaders to freely access resources, such as buffers
+//  and images. The 'Descriptor Layout', specifies the type of resources
+//  that are going to be accessed by the pipeline. 'Descriptor Set',
+//  specifies the actual buffer or image resources that will be bound to the
+//  descriptors.
+//
+// --------------------------------------------------------------------------
+
+bool VulkanManager::createDescriptorSetLayout()
+{
+    // Uniform Buffer Object (UBO) is one of the available descriptors
+    VkDescriptorSetLayoutBinding uboLayoutBinding{};
+    uboLayoutBinding.binding            = 0;
+    uboLayoutBinding.descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    // it is possible specifify an array of UBO (ex. skeleton animation) and
+    // the number of values in the array. Here we just have one - UBO
+    uboLayoutBinding.descriptorCount    = 1;
+    uboLayoutBinding.stageFlags         = VK_SHADER_STAGE_VERTEX_BIT;
+    uboLayoutBinding.pImmutableSamplers = nullptr;  // optional
+
+    VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo{};
+    descriptorSetLayoutInfo.sType           = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    descriptorSetLayoutInfo.bindingCount    = 1;
+    descriptorSetLayoutInfo.pBindings       = &uboLayoutBinding;
+
+    if (vkCreateDescriptorSetLayout(m_device, &descriptorSetLayoutInfo, nullptr, &m_descriptorSetLayout)
+        != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to create descriptor set layout!");
+        return false;
+    };
+
+    PRINTLN("Created Descriptor Layout");
+
+    return true;
+}
+
+bool VulkanManager::createDescriptorPool()
+{
+    // Descriptor Pool
+    //
+    // Descriptor Sets CANNOT be created directly, it needs to be allocated through a pool
+    // just like command buffers.
+
+    VkDescriptorPoolSize descriptorPoolSize{};
+    descriptorPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorPoolSize.descriptorCount = static_cast<uint32_t>(m_swapchainImages.size());
+
+    VkDescriptorPoolCreateInfo descriptorPoolInfo{};
+    descriptorPoolInfo.sType            = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    descriptorPoolInfo.poolSizeCount    = 1;
+    descriptorPoolInfo.pPoolSizes       = &descriptorPoolSize;
+    descriptorPoolInfo.maxSets          = static_cast<uint32_t>(m_swapchainImages.size());
+
+    if (vkCreateDescriptorPool(m_device, &descriptorPoolInfo, nullptr, &m_descriptorPool)
+        != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to create descriptor pool!");
+        return false;
+    }
+
+    PRINTLN("Created Descriptor Pool");
+
+    return true;
+}
+
+bool VulkanManager::createDescriptorSets()
+{
+    bool result = true;
+
+    std::vector<VkDescriptorSetLayout> layouts(m_swapchainImages.size(), m_descriptorSetLayout);
+
+    VkDescriptorSetAllocateInfo descriptorSetAllocInfo{};
+    descriptorSetAllocInfo.sType                = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    descriptorSetAllocInfo.descriptorPool       = m_descriptorPool;
+    descriptorSetAllocInfo.descriptorSetCount   = static_cast<uint32_t>(m_swapchainImages.size());
+    descriptorSetAllocInfo.pSetLayouts          = layouts.data();
+
+    m_descriptorSets.resize(m_swapchainImages.size());
+    if (vkAllocateDescriptorSets(m_device, &descriptorSetAllocInfo, m_descriptorSets.data())
+        != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to allocate descriptor sets!");
+        result = false;
+    }
+
+    for (size_t i = 0; i < m_swapchainImages.size(); ++i)
+    {
+        // specifies buffer and the region
+        VkDescriptorBufferInfo descriptorBufferInfo{};
+        descriptorBufferInfo.buffer = m_uniformBuffers[i];
+        descriptorBufferInfo.offset = 0;
+        descriptorBufferInfo.range  = sizeof(UniformBufferObject);
+
+        // descriptor set configuration
+        VkWriteDescriptorSet writeDescriptorSet{};
+        writeDescriptorSet.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writeDescriptorSet.dstSet           = m_descriptorSets[i];
+        writeDescriptorSet.dstBinding       = 0;
+        writeDescriptorSet.dstArrayElement  = 0;    // descriptor can be arrays, yet in our case is 0
+        writeDescriptorSet.descriptorType   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writeDescriptorSet.descriptorCount  = 1;
+        writeDescriptorSet.pBufferInfo      = &descriptorBufferInfo;
+        writeDescriptorSet.pImageInfo       = nullptr;  // optional
+        writeDescriptorSet.pTexelBufferView = nullptr;  // optional
+
+        vkUpdateDescriptorSets(m_device, 1, &writeDescriptorSet, 0, nullptr);
+    }
+
+    if (result == true)
+        PRINTLN("Created Descriptor Sets");
+
+    return result;
+}
+
 
 // ----------------------<<  Graphics Pipepline  >>--------------------------
 //
@@ -1179,13 +1326,13 @@ bool VulkanManager::createGraphicsPipeline()
     // 4.5 Rasterizer
     VkPipelineRasterizationStateCreateInfo rasterizationStateCreateInfo{};
     rasterizationStateCreateInfo.sType                      = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterizationStateCreateInfo.depthClampEnable           = VK_FALSE; // clamp range beyond near/far plane
-    rasterizationStateCreateInfo.rasterizerDiscardEnable    = VK_FALSE; // don't let geometry to pass the rasterizer, and won't display on framebuffer
-    rasterizationStateCreateInfo.polygonMode                = VK_POLYGON_MODE_FILL; // _LINE / _POINT (these two requires GPU feature)
-    rasterizationStateCreateInfo.lineWidth                  = 1.0f; // thickness of lines covering the fragment. Larger than 1.0 requires GPU feature
+    rasterizationStateCreateInfo.depthClampEnable           = VK_FALSE;                 // clamp range beyond near/far plane
+    rasterizationStateCreateInfo.rasterizerDiscardEnable    = VK_FALSE;                 // don't let geometry to pass the rasterizer, and won't display on framebuffer
+    rasterizationStateCreateInfo.polygonMode                = VK_POLYGON_MODE_FILL;     // _LINE / _POINT (these two requires GPU feature)
+    rasterizationStateCreateInfo.lineWidth                  = 1.0f;                     // thickness of lines covering the fragment. Larger than 1.0 requires GPU feature
     rasterizationStateCreateInfo.cullMode                   = VK_CULL_MODE_BACK_BIT;    // back-face culling
-    rasterizationStateCreateInfo.frontFace                  = VK_FRONT_FACE_CLOCKWISE;  // vertex oreder of the front face
-    rasterizationStateCreateInfo.depthBiasEnable            = VK_FALSE; // set true - adjust depth values through the values below
+    rasterizationStateCreateInfo.frontFace                  = VK_FRONT_FACE_COUNTER_CLOCKWISE;  // vertex oreder of the front face
+    rasterizationStateCreateInfo.depthBiasEnable            = VK_FALSE;                 // set true - adjust depth values through the values below
     rasterizationStateCreateInfo.depthBiasConstantFactor    = 0.0f;
     rasterizationStateCreateInfo.depthBiasClamp             = 0.0f;
     rasterizationStateCreateInfo.depthBiasSlopeFactor       = 0.0f;
@@ -1252,9 +1399,9 @@ bool VulkanManager::createGraphicsPipeline()
     // In practice, transform matrices are usually passed through this.
     VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo{};
     pipelineLayoutCreateInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutCreateInfo.setLayoutCount         = 0;    // optional
-    pipelineLayoutCreateInfo.pSetLayouts            = nullptr;  // optional
-    pipelineLayoutCreateInfo.pushConstantRangeCount = 0;    // optional
+    pipelineLayoutCreateInfo.setLayoutCount         = 1;        // optional
+    pipelineLayoutCreateInfo.pSetLayouts            = &m_descriptorSetLayout;  // optional
+    pipelineLayoutCreateInfo.pushConstantRangeCount = 0;        // optional
     pipelineLayoutCreateInfo.pPushConstantRanges    = nullptr;  // optional
 
     // this is a manatory field to register even though we leave blank, so
@@ -1504,7 +1651,8 @@ bool VulkanManager::createBuffer(VkDeviceSize bufferSize,
                                  VkBuffer& buffer,
                                  VkDeviceMemory& bufferMemory)
 {
-    // create buffer
+    // Create buffer
+    //
     VkBufferCreateInfo bufferCreateInfo{};
     bufferCreateInfo.sType          = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferCreateInfo.size           = bufferSize;
@@ -1519,8 +1667,8 @@ bool VulkanManager::createBuffer(VkDeviceSize bufferSize,
         result = false;
     }
 
-    // memroy allocation
-
+    // Memory allocation
+    //
     // query how much memory required for the buffer, which can be resulting
     // differently across the GPUs.
     // The following data is contained in the struct:
@@ -1618,13 +1766,13 @@ bool VulkanManager::createIndexBuffer()
     return true;
 }
 
-#ifdef USE_STAGING_BUFFER
 bool VulkanManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize deviceSize)
 {
     // Copies the buffer one to another.
 
     bool result = true;
 
+#ifdef USE_STAGING_BUFFER
     // Memory transfer is also done through the command buffer, so we create another
     // one-time short usage command buffer here
     VkCommandBufferAllocateInfo cmdBufferAllocateInfo{};
@@ -1668,10 +1816,35 @@ bool VulkanManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceS
 
     // cleanup command buffer
     vkFreeCommandBuffers(m_device, m_commandPool, 1, &cmdBuffer);
+#endif
 
     return result;
 }
-#endif
+
+bool VulkanManager::createUniformBuffers()
+{
+    // Multiple Uniform Buffers are required, because multiple frames can be 'in flight'
+    // and we shouldn't modify the buffer in preparation while the other is in use.
+    // We can either create the Uniform Buffer per-frame or per-swapcahin image. However,
+    // since we are referring the Uniform Buffer from the Command Buffer that exists per-
+    // swapchian image.
+    m_uniformBuffers.resize(m_swapchainImages.size());
+    m_uniformBuffersMemory.resize(m_swapchainImages.size());
+
+    VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+    for (size_t i = 0; i < m_swapchainImages.size(); ++i)
+    {
+        createBuffer(bufferSize,
+                     VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                     m_uniformBuffers[i],
+                     m_uniformBuffersMemory[i]);
+    }
+
+    PRINTLN("Created Uniform Buffer");
+
+    return true;
+}
 
 
 // ------------------------<<  Command Buffers  >>---------------------------
@@ -1782,6 +1955,7 @@ bool VulkanManager::createCommandBuffers()
         // 3. Record commands
         // All the functions that record commands are prefixed with vkCmd
         // (vertex count, instance count, first vertex, first instance)
+        vkCmdBindDescriptorSets(m_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1 , &m_descriptorSets[i], 0, nullptr);
         vkCmdDrawIndexed(m_commandBuffers[i], static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
         // 4. Finish
@@ -1933,11 +2107,32 @@ bool VulkanManager::submitPresentation(const uint32_t frameIndex, const uint32_t
     return true;
 }
 
+void VulkanManager::updateUniformBuffer(uint32_t currentImangeIdx)
+{
+    static auto startTime = std::chrono::high_resolution_clock::now();
+    auto        currentTime = std::chrono::high_resolution_clock::now();
+    float       dt = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+
+    UniformBufferObject ubo{};
+    ubo.model = glm::rotate(glm::mat4(1.0f), dt * glm::radians(90.f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.view = glm::lookAt(glm::vec3(2.0f), glm::vec3(0.0), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.proj = glm::perspective(glm::radians(45.f), m_swapchainExtent.width / (float)m_swapchainExtent.height, 0.1f, 10.f);
+    ubo.proj[1][1] *= -1;   // flip Y-axis (because glm was designed for OpenGL)
+
+    // apply transformation
+    void* data;
+    vkMapMemory(m_device, m_uniformBuffersMemory[currentImangeIdx], 0, sizeof(ubo), 0, &data);
+    memcpy(data, &ubo, sizeof(ubo));
+    vkUnmapMemory(m_device, m_uniformBuffersMemory[currentImangeIdx]);
+}
+
 void VulkanManager::drawFrame()
 {
     m_curretFrameIndex = (m_curretFrameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
     uint32_t imgIndex;
     acquireNextImageIndex(m_curretFrameIndex, imgIndex);
+
+    updateUniformBuffer(imgIndex);
 
     // CPU - GPU syncronization.
     // Normally at this point, GPU work speed cannot follow up the CPU work
@@ -1982,6 +2177,11 @@ void VulkanManager::cleanSwapChain()
     for (auto imageView : m_swapchainImageViews)
         vkDestroyImageView(m_device, imageView, nullptr);
     vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
+    for (size_t i = 0; i < m_swapchainImages.size(); ++i) {
+        vkDestroyBuffer(m_device, m_uniformBuffers[i], nullptr);
+        vkFreeMemory(m_device, m_uniformBuffersMemory[i], nullptr);
+    }
+    vkDestroyDescriptorPool(m_device, m_descriptorPool, nullptr);
 }
 
 void VulkanManager::cleanVulkan()
@@ -1991,6 +2191,7 @@ void VulkanManager::cleanVulkan()
 
     cleanSwapChain();
 
+    vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout, nullptr);
     vkDestroyBuffer(m_device, m_vertexBuffer, nullptr);
     vkFreeMemory(m_device, m_vertexBufferMemory, nullptr);
     vkDestroyBuffer(m_device, m_indexBuffer, nullptr);
