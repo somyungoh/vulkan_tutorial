@@ -108,8 +108,16 @@ struct Vertex
 
 struct UniformBufferObject
 {
+    // Data alignment: Vulkan requires the memory to be aligned in a specific way:
+    // scalar(4) vec2(8) vec3/vec4/mat4(16), nested struct(x*16) in bytes
+    // So, here we use the alignas(C++11 feature) to make sure mat4 is aligned 16.
+    // It doesn't matter just like this (i.e already aligned 16,16,16 bytes) but it
+    // can be easily broken down by adding any other components such as vec2.
+    alignas(16)
     glm::mat4 model;
+    alignas(16)
     glm::mat4 view;
+    alignas(16)
     glm::mat4 proj;
 };
 
