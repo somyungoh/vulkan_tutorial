@@ -46,7 +46,7 @@ void HelloTriangleApp::initGLFW()
     // GLFW is initially deigned for OpenGL, so we need to explicitly tell
     // that we will not create OpenGL context.
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
     // create window
     m_window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan Window", nullptr, nullptr);
