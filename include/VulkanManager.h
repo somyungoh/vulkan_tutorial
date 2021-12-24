@@ -101,6 +101,8 @@ private:
 
     // << Images >>
     void createImage(uint32_t w, uint32_t h, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags property, VkImage &img, VkDeviceMemory &mem);
+    void transitionImageLayout(VkImage img, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
+    void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
 
     // << Command Buffers >>
     bool            createCommandPool();

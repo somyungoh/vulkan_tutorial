@@ -1900,7 +1900,8 @@ bool VulkanManager::createTextureImage()
 
     stbi_image_free(pixels);
 
-    // create image
+    // 1. Create Image
+    //
     createImage(imgWidth, imgHeight,
                 VK_FORMAT_R8G8B8A8_SRGB,    // same foramt as 'pixels'
                 // two choice for tiling:
@@ -1914,6 +1915,16 @@ bool VulkanManager::createTextureImage()
                 m_textureImage,
                 m_textureImageMemory);
 
+    // 2. Copy staging buffer to the texture image
+    //
+    // transition the texture to VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL - optimal layout for copy
+    transitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    // execute copy command
+    copyBufferToImage(stagingBuffer, m_textureImage, static_cast<uint32_t>(imgWidth), static_cast<uint32_t>(imgHeight));
+    // another transition for shader access
+    transitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    // cleanup
     vkDestroyBuffer(m_device, stagingBuffer, nullptr);
     vkFreeMemory(m_device, stagingBufferMemory, nullptr);
 
@@ -1962,6 +1973,91 @@ void VulkanManager::createImage(uint32_t width, uint32_t height,
 
     vkBindImageMemory(m_device, image, imageMemory, 0);
 }
+
+void VulkanManager::transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout)
+{
+    // handle image to be placed in the right layout
+
+    VkCommandBuffer cmdBuffer = beginSingleTimeCommands();
+
+    // Image barrier is one way (and most common) to handle layout transitions.
+    // Usually it is to sync. resource access (finish write before read), but here
+    // it is to transition image layout and transfer queue family owndership when
+    // VK_SHARING_MODE_EXCLUSIVE is set
+    VkImageMemoryBarrier imageMemoryBarrier{};
+    imageMemoryBarrier.sType        = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    imageMemoryBarrier.oldLayout    = oldLayout;    // VK_IMAGE_LAYOUT_UNDEFINED if you don't care about exsiting image
+    imageMemoryBarrier.newLayout    = newLayout;
+    // specify that the image is affected, the specific part of the image
+    // our setting is for a single image, not an array of images
+    imageMemoryBarrier.image        = image;
+    imageMemoryBarrier.subresourceRange.aspectMask      = VK_IMAGE_ASPECT_COLOR_BIT;
+    imageMemoryBarrier.subresourceRange.baseMipLevel    = 0;
+    imageMemoryBarrier.subresourceRange.levelCount      = 1;
+    imageMemoryBarrier.subresourceRange.baseArrayLayer  = 0;
+    imageMemoryBarrier.subresourceRange.layerCount      = 1;
+    // specify which type of operations will be done and needed to be waited before/after
+    // the barrier. We handle based on the layout type
+    VkPipelineStageFlags srcStage;
+    VkPipelineStageFlags dstStage;
+    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+    {
+        imageMemoryBarrier.srcAccessMask    = 0;
+        imageMemoryBarrier.dstAccessMask    = VK_ACCESS_TRANSFER_WRITE_BIT;
+        srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        dstStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    }
+    else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+    {
+        imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        imageMemoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        srcStage    = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        dstStage    = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    }
+    else
+        throw std::invalid_argument("unsupported layout transition!");
+
+    vkCmdPipelineBarrier(
+        cmdBuffer,
+        srcStage, dstStage, // in which pipeline stage that:  the operation occur, wait on the barrier
+        0,                  // or VK_DEPENDENCY_BY_REGION_BIT - can begin reading from parts of a resource that's written so far
+        0, nullptr,         // memory barriers
+        0, nullptr,         // buffer memory barriers
+        1, &imageMemoryBarrier // image memory barriers
+    );
+
+    endSingleTimeCommands(cmdBuffer);
+}
+
+void VulkanManager::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height)
+{
+    VkCommandBuffer cmdBuffer = beginSingleTimeCommands();
+
+    VkBufferImageCopy copyRegion{};
+    // data padding
+    copyRegion.bufferOffset         = 0;
+    copyRegion.bufferRowLength      = 0;
+    copyRegion.bufferImageHeight    = 0;
+    // which part of the image we want to copy
+    copyRegion.imageSubresource.aspectMask      = VK_IMAGE_ASPECT_COLOR_BIT;
+    copyRegion.imageSubresource.mipLevel        = 0;
+    copyRegion.imageSubresource.baseArrayLayer  = 0;
+    copyRegion.imageSubresource.layerCount      = 1;
+    copyRegion.imageOffset = {0, 0, 0};
+    copyRegion.imageExtent = {width, height, 1};
+
+    vkCmdCopyBufferToImage(
+        cmdBuffer,
+        buffer,
+        image,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,   // which layout the image is using (here we assume layout for copy)
+        1,
+        &copyRegion
+    );
+
+    endSingleTimeCommands(cmdBuffer);
+}
+
 
 // ------------------------<<  Command Buffers  >>---------------------------
 //
@@ -2307,6 +2403,8 @@ void VulkanManager::cleanVulkan()
 
     cleanSwapChain();
 
+    vkDestroyImage(m_device, m_textureImage, nullptr);
+    vkFreeMemory(m_device, m_textureImageMemory, nullptr);
     vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout, nullptr);
     vkDestroyBuffer(m_device, m_vertexBuffer, nullptr);
     vkFreeMemory(m_device, m_vertexBufferMemory, nullptr);
