@@ -93,10 +93,14 @@ private:
     // << Vertex Buffers >>
     bool        createBuffer(VkDeviceSize, VkBufferUsageFlags, VkMemoryPropertyFlags, VkBuffer&, VkDeviceMemory&);
     bool        createVertexBuffer();
+    bool        createTextureImage();
     bool        createIndexBuffer();
     bool        createUniformBuffers();
     uint32_t    findMemoryType(uint32_t, VkMemoryPropertyFlags);
     bool        copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize deviceSize);
+
+    // << Images >>
+    void createImage(uint32_t w, uint32_t h, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags property, VkImage &img, VkDeviceMemory &mem);
 
     // << Command Buffers >>
     bool createCommandPool();
@@ -164,6 +168,8 @@ private:
     VkDeviceMemory                  m_vertexBufferMemory;
     VkBuffer                        m_indexBuffer;
     VkDeviceMemory                  m_indexBufferMemory;
+    VkImage                         m_textureImage;
+    VkDeviceMemory                  m_textureImageMemory;
 
     // << Uniform Buffers >>
     std::vector<VkBuffer>           m_uniformBuffers;

@@ -217,6 +217,7 @@ void VulkanManager::initVulkan(GLFWwindow* window)
     result &= createFrameBuffers();
     result &= createCommandPool();
     result &= createVertexBuffer();
+    result &= createTextureImage();
     result &= createIndexBuffer();
     result &= createUniformBuffers();
     result &= createDescriptorPool();
@@ -1850,6 +1851,113 @@ bool VulkanManager::createUniformBuffers()
     return true;
 }
 
+
+// ------------------------<<  Texture Mapping  >>---------------------------
+//
+//  Adding a texture involves four steps:
+//  1) create image object in the device memory (staging)
+//  2) fill it with the pixels
+//  3) create an image sampler
+//  4) add a combined image sampler descriptor to sample colors from the textures
+//
+// --------------------------------------------------------------------------
+
+bool VulkanManager::createTextureImage()
+{
+    // load image file
+    int imgWidth, imgHeight, imgChannels;
+    stbi_uc* pixels = stbi_load("../src/images/beef.jpg", &imgWidth, &imgHeight, &imgChannels, STBI_rgb_alpha);
+
+    bool result;
+
+    if (!pixels)
+    {
+        throw std::runtime_error("failed to load image!");
+        result = false;
+    }
+
+    // staging buffer
+    //
+    VkBuffer        stagingBuffer;
+    VkDeviceMemory  stagingBufferMemory;
+    VkDeviceSize    imgSize = imgWidth * imgHeight * 4;
+
+    createBuffer(imgSize,
+                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 stagingBuffer,
+                 stagingBufferMemory);
+
+    // directly copy the image pixel data to the buffer
+    void* data;
+    vkMapMemory(m_device, stagingBufferMemory, 0, imgSize, 0, &data);
+    memcpy(data, pixels, static_cast<size_t>(imgSize));
+    vkUnmapMemory(m_device, stagingBufferMemory);
+
+    stbi_image_free(pixels);
+
+    // create image
+    createImage(imgWidth, imgHeight,
+                VK_FORMAT_R8G8B8A8_SRGB,    // same foramt as 'pixels'
+                // two choice for tiling:
+                // - VK_IMAGE_TILING_LINEAR: texels in row-major, allowes direct access texels in the memory
+                 //                           which is not necessary if you are using staging buffer
+                 // - VK_IMAGE_TILING_OPTIMAL: more efficient for access from the shader
+                VK_IMAGE_TILING_OPTIMAL,
+                VK_IMAGE_USAGE_TRANSFER_DST_BIT | // our destination
+                VK_IMAGE_USAGE_SAMPLED_BIT,       // allow to access from the shader
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                m_textureImage,
+                m_textureImageMemory);
+
+    vkDestroyBuffer(m_device, stagingBuffer, nullptr);
+    vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+
+    if (result == true)
+        PRINTLN("created texture");
+
+    return result;
+}
+
+void VulkanManager::createImage(uint32_t width, uint32_t height,
+                                VkFormat format, VkImageTiling tiling,
+                                VkImageUsageFlags usage, VkMemoryPropertyFlags property,
+                                VkImage &image, VkDeviceMemory &imageMemory)
+{
+    // create image
+    VkImageCreateInfo imageCreateInfo{};
+    imageCreateInfo.sType           = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageCreateInfo.imageType       = VK_IMAGE_TYPE_2D;
+    imageCreateInfo.extent.width    = static_cast<uint32_t>(width);
+    imageCreateInfo.extent.height   = static_cast<uint32_t>(height);
+    imageCreateInfo.extent.depth    = 1;
+    imageCreateInfo.mipLevels       = 1;    // no mipmap
+    imageCreateInfo.arrayLayers     = 1;
+    imageCreateInfo.format          = format;
+    imageCreateInfo.tiling          = tiling;
+    imageCreateInfo.initialLayout   = VK_IMAGE_LAYOUT_UNDEFINED;        // no need to pre-initialize and preserve texels in our case
+    imageCreateInfo.usage           = usage;
+    imageCreateInfo.sharingMode     = VK_SHARING_MODE_EXCLUSIVE;
+    imageCreateInfo.samples         = VK_SAMPLE_COUNT_1_BIT;
+    imageCreateInfo.flags           = 0;    // optional
+
+    if (vkCreateImage(m_device, &imageCreateInfo, nullptr, &image) != VK_SUCCESS)
+        throw std::runtime_error("failed to create image!");
+
+    // memory allocation
+    VkMemoryRequirements memoryRequirements;
+    vkGetImageMemoryRequirements(m_device, image, &memoryRequirements);
+
+    VkMemoryAllocateInfo memoryAllocateInfo{};
+    memoryAllocateInfo.sType            = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    memoryAllocateInfo.allocationSize   = memoryRequirements.size;
+    memoryAllocateInfo.memoryTypeIndex  = findMemoryType(memoryRequirements.memoryTypeBits, property);
+
+    if (vkAllocateMemory(m_device, &memoryAllocateInfo, nullptr, &imageMemory) != VK_SUCCESS)
+        throw std::runtime_error("failed to allocate image memory!");
+
+    vkBindImageMemory(m_device, image, imageMemory, 0);
+}
 
 // ------------------------<<  Command Buffers  >>---------------------------
 //
