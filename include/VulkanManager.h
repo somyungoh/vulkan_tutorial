@@ -103,8 +103,10 @@ private:
     void createImage(uint32_t w, uint32_t h, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags property, VkImage &img, VkDeviceMemory &mem);
 
     // << Command Buffers >>
-    bool createCommandPool();
-    bool createCommandBuffers();
+    bool            createCommandPool();
+    bool            createCommandBuffers();
+    VkCommandBuffer beginSingleTimeCommands();
+    void            endSingleTimeCommands(VkCommandBuffer cmdBuffer);
 
     // << Rendering & Presentation >>
     bool  createSyncObjects();

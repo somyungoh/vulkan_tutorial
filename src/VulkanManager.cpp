@@ -1774,31 +1774,8 @@ bool VulkanManager::createIndexBuffer()
 bool VulkanManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize deviceSize)
 {
     // Copies the buffer one to another.
-
-    bool result = true;
-
 #ifdef USE_STAGING_BUFFER
-    // Memory transfer is also done through the command buffer, so we create another
-    // one-time short usage command buffer here
-    VkCommandBufferAllocateInfo cmdBufferAllocateInfo{};
-    cmdBufferAllocateInfo.sType                 = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    cmdBufferAllocateInfo.level                 = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    cmdBufferAllocateInfo.commandPool           = m_commandPool;
-    cmdBufferAllocateInfo.commandBufferCount    = 1;
-
-    VkCommandBuffer cmdBuffer;
-    if (vkAllocateCommandBuffers(m_device, &cmdBufferAllocateInfo, &cmdBuffer) != VK_SUCCESS)
-    {
-        throw std::runtime_error("failed to allocate command buffer!");
-        result = false;
-    }
-
-    VkCommandBufferBeginInfo cmdBufferBeginInfo{};
-    cmdBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    cmdBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; // use once, wait until finishing execution
-
-    // start filling command buffer
-    vkBeginCommandBuffer(cmdBuffer, &cmdBufferBeginInfo);
+    VkCommandBuffer cmdBuffer = beginSingleTimeCommands();
 
     // copy command
     VkBufferCopy copyRegion{};
@@ -1807,23 +1784,10 @@ bool VulkanManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceS
     copyRegion.dstOffset = 0;   // optional
     vkCmdCopyBuffer(cmdBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
 
-    vkEndCommandBuffer(cmdBuffer);
-
-    // Execute command buffer
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount   = 1;
-    submitInfo.pCommandBuffers      = &cmdBuffer;
-    vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-
-    // no other event to wait for here, execute immediately
-    vkQueueWaitIdle(m_graphicsQueue);   // or use vkWaitForFences
-
-    // cleanup command buffer
-    vkFreeCommandBuffers(m_device, m_commandPool, 1, &cmdBuffer);
+    endSingleTimeCommands(cmdBuffer);
 #endif
 
-    return result;
+    return true;
 }
 
 bool VulkanManager::createUniformBuffers()
@@ -1851,6 +1815,46 @@ bool VulkanManager::createUniformBuffers()
     return true;
 }
 
+VkCommandBuffer VulkanManager::beginSingleTimeCommands()
+{
+    VkCommandBufferAllocateInfo cmdBufferAllocateInfo{};
+    cmdBufferAllocateInfo.sType                 = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cmdBufferAllocateInfo.level                 = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cmdBufferAllocateInfo.commandPool           = m_commandPool;
+    cmdBufferAllocateInfo.commandBufferCount    = 1;
+
+    VkCommandBuffer cmdBuffer;
+    if (vkAllocateCommandBuffers(m_device, &cmdBufferAllocateInfo, &cmdBuffer) != VK_SUCCESS)
+        throw std::runtime_error("failed to allocate command buffer!");
+
+    VkCommandBufferBeginInfo cmdBufferBeginInfo{};
+    cmdBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    cmdBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; // use once, wait until finishing execution
+
+    // start filling command buffer
+    vkBeginCommandBuffer(cmdBuffer, &cmdBufferBeginInfo);
+
+    return cmdBuffer;
+}
+
+void VulkanManager::endSingleTimeCommands(VkCommandBuffer cmdBuffer)
+{
+    vkEndCommandBuffer(cmdBuffer);
+
+    // Execute command buffer
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount   = 1;
+    submitInfo.pCommandBuffers      = &cmdBuffer;
+    vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+
+    // no other event to wait for here, execute immediately
+    vkQueueWaitIdle(m_graphicsQueue);   // or use vkWaitForFences
+
+    // cleanup command buffer
+    vkFreeCommandBuffers(m_device, m_commandPool, 1, &cmdBuffer);
+}
+
 
 // ------------------------<<  Texture Mapping  >>---------------------------
 //
@@ -1868,7 +1872,7 @@ bool VulkanManager::createTextureImage()
     int imgWidth, imgHeight, imgChannels;
     stbi_uc* pixels = stbi_load("../src/images/beef.jpg", &imgWidth, &imgHeight, &imgChannels, STBI_rgb_alpha);
 
-    bool result;
+    bool result = true;
 
     if (!pixels)
     {
