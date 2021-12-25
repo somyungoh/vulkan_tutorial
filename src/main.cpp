@@ -2,11 +2,11 @@
 #include <stdexcept>
 #include <cstdlib>
 
-#include "HelloTriangleApp.h"
+#include "MyApp.h"
 
 int main()
 {
-    HelloTriangleApp app;
+    MyApp app;
 
     try
     {

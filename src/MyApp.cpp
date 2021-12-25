@@ -1,4 +1,4 @@
-#include "HelloTriangleApp.h"
+#include "MyApp.h"
 #include "VulkanManager.h"
 #include "Common.h"
 
@@ -8,13 +8,13 @@
 
 
 // constructor, destructors
-HelloTriangleApp::HelloTriangleApp()
+MyApp::MyApp()
     : WIDTH(800), HEIGHT(600) {};
 
-HelloTriangleApp::~HelloTriangleApp() {};
+MyApp::~MyApp() {};
 
 
-void HelloTriangleApp::run()
+void MyApp::run()
 {
     initGLFW();
     initVulkanManager();
@@ -33,7 +33,7 @@ static void framebufferResizeCallback(GLFWwindow *window, int width, int height)
 //::::::::::::::::::::::
 
 // initialize GLFW
-void HelloTriangleApp::initGLFW()
+void MyApp::initGLFW()
 {
     PRINT_BAR_LINE();
 
@@ -64,14 +64,14 @@ void HelloTriangleApp::initGLFW()
         PRINTLN("Successfully initialized GLFW window");
 }
 
-void HelloTriangleApp::initVulkanManager()
+void MyApp::initVulkanManager()
 {
     m_VulkanManager = new VulkanManager();
     m_VulkanManager->initVulkan(m_window);
 }
 
 // main event loop for GLFW
-void HelloTriangleApp::mainLoop()
+void MyApp::mainLoop()
 {
     // fps timer setup
     bool isFirstFrame = true;
@@ -103,13 +103,13 @@ void HelloTriangleApp::mainLoop()
     }
 }
 
-void HelloTriangleApp::cleanVulkanManager()
+void MyApp::cleanVulkanManager()
 {
     m_VulkanManager->cleanVulkan();
     delete m_VulkanManager;
 }
 
-void HelloTriangleApp::cleanup()
+void MyApp::cleanup()
 {
     cleanVulkanManager();
     glfwDestroyWindow(m_window);

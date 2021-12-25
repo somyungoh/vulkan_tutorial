@@ -7,11 +7,11 @@
 // forward declaration
 class VulkanManager;
 
-class HelloTriangleApp
+class MyApp
 {
 public:
-    HelloTriangleApp();
-    virtual ~HelloTriangleApp();
+    MyApp();
+    virtual ~MyApp();
 
     void run();
 
