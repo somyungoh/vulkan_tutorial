@@ -74,6 +74,8 @@ private:
 
     // << Image Views >>
     bool createImageViews();
+    bool createTextureImageView();
+    bool createImageView(VkImage image, VkFormat format, VkImageView* outImageView);
 
     // << Descriptor Layout >>
     bool            createDescriptorSetLayout();
@@ -151,6 +153,7 @@ private:
 
     // << Image Views >>
     std::vector<VkImageView>        m_swapchainImageViews;
+    VkImageView                     m_textureImageView;
 
     // << Render Pass >>
     VkRenderPass                    m_renderPass;

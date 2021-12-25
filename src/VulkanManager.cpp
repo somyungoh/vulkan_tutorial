@@ -216,8 +216,11 @@ void VulkanManager::initVulkan(GLFWwindow* window)
     // Drawing
     result &= createFrameBuffers();
     result &= createCommandPool();
-    result &= createVertexBuffer();
+
     result &= createTextureImage();
+    result &= createTextureImageView();
+
+    result &= createVertexBuffer();
     result &= createIndexBuffer();
     result &= createUniformBuffers();
     result &= createDescriptorPool();
@@ -1007,32 +1010,7 @@ bool VulkanManager::createImageViews()
 
     for (int i = 0; i < m_swapchainImageViews.size(); i++)
     {
-        // initialize each slots
-        VkImageViewCreateInfo imageViewCreateInfo{};
-        imageViewCreateInfo.sType       = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        imageViewCreateInfo.image       = m_swapchainImages[i];
-        imageViewCreateInfo.viewType    = VK_IMAGE_VIEW_TYPE_2D;
-        imageViewCreateInfo.format      = m_swapchainImageFormat;
-        // [components] field allows to swizzle the color channels (i.e. map
-        // all colors to the red channel), but we stick to the default.
-        imageViewCreateInfo.components.r    = VK_COMPONENT_SWIZZLE_IDENTITY;
-        imageViewCreateInfo.components.g    = VK_COMPONENT_SWIZZLE_IDENTITY;
-        imageViewCreateInfo.components.b    = VK_COMPONENT_SWIZZLE_IDENTITY;
-        imageViewCreateInfo.components.a    = VK_COMPONENT_SWIZZLE_IDENTITY;
-        // [subresourceRange] field defines the image's purpose and which
-        // part of the image is accessed.
-        imageViewCreateInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;    // used as color targets
-        imageViewCreateInfo.subresourceRange.baseMipLevel   = 0;    // no mipmaps
-        imageViewCreateInfo.subresourceRange.levelCount     = 1;
-        imageViewCreateInfo.subresourceRange.baseArrayLayer = 0;
-        imageViewCreateInfo.subresourceRange.layerCount     = 1;
-
-        // create image view
-        VkResult result = vkCreateImageView(m_device,
-                                            &imageViewCreateInfo,
-                                            nullptr,
-                                            &m_swapchainImageViews[i]);
-        if (result != VK_SUCCESS)
+        if (!createImageView(m_swapchainImages[i], m_swapchainImageFormat, &m_swapchainImageViews[i]))
         {
             throw std::runtime_error("failed to create image views!");
             return false;
@@ -1042,6 +1020,49 @@ bool VulkanManager::createImageViews()
     PRINTLN("Created Image Views");
     return true;
 }
+
+bool VulkanManager::createTextureImageView()
+{
+    bool result = true;
+    if (!createImageView(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, &m_textureImageView))
+    {
+        throw std::runtime_error("failed to create texture image view!");
+        result = false;
+    }
+
+    return result;
+}
+
+bool VulkanManager::createImageView(VkImage image, VkFormat format,  VkImageView* outImageView)
+{
+    // How shader will read the images.
+    // Recall that images are read through VkImageView rather than directly
+
+    VkImageViewCreateInfo imageViewCreateInfo{};
+    imageViewCreateInfo.sType       = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    imageViewCreateInfo.image       = image;
+    imageViewCreateInfo.viewType    = VK_IMAGE_VIEW_TYPE_2D;
+    imageViewCreateInfo.format      = format;
+    // [components] field allows to swizzle the color channels (i.e. map
+    // all colors to the red channel), but we stick to the default.
+    imageViewCreateInfo.components.r    = VK_COMPONENT_SWIZZLE_IDENTITY;
+    imageViewCreateInfo.components.g    = VK_COMPONENT_SWIZZLE_IDENTITY;
+    imageViewCreateInfo.components.b    = VK_COMPONENT_SWIZZLE_IDENTITY;
+    imageViewCreateInfo.components.a    = VK_COMPONENT_SWIZZLE_IDENTITY;
+    // [subresourceRange] field defines the image's purpose and which
+    // part of the image is accessed.
+    imageViewCreateInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+    imageViewCreateInfo.subresourceRange.baseMipLevel   = 0;
+    imageViewCreateInfo.subresourceRange.levelCount     = 1;
+    imageViewCreateInfo.subresourceRange.baseArrayLayer = 0;
+    imageViewCreateInfo.subresourceRange.layerCount     = 1;
+
+    if (vkCreateImageView(m_device, &imageViewCreateInfo, nullptr, outImageView) != VK_SUCCESS)
+        return false;
+
+    return true;
+}
+
 
 // -------------------------<<  Render Passes  >>----------------------------
 //
@@ -2371,6 +2392,7 @@ void VulkanManager::drawFrame()
     submitPresentation(m_curretFrameIndex, imgIndex);
 }
 
+
 // --------------------------<<  Exit  >>----------------------------
 //
 //  VkPhysicalDevice - automatically handled
@@ -2403,6 +2425,7 @@ void VulkanManager::cleanVulkan()
 
     cleanSwapChain();
 
+    vkDestroyImageView(m_device, m_textureImageView, nullptr);
     vkDestroyImage(m_device, m_textureImage, nullptr);
     vkFreeMemory(m_device, m_textureImageMemory, nullptr);
     vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout, nullptr);
