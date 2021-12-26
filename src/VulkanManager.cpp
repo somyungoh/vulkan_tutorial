@@ -45,8 +45,8 @@
 #define MAX_FRAMES_IN_FLIGHT 2
 #define USE_STAGING_BUFFER    // see createVertexBuffer()
 
-
 // ---------------------------< Struct definitions >-----------------------------
+
 struct QueueFamilyIndices
 {
     // std::optional - c++17 extension, which contains nothing until
@@ -68,6 +68,7 @@ struct Vertex
 {
     glm::vec2 pos;
     glm::vec3 color;
+    glm::vec2 texCoord;
 
     // Vertex Binding: describes at which rate the vertex data should be loaded.
     static VkVertexInputBindingDescription getBindingDesc()
@@ -84,12 +85,13 @@ struct Vertex
     }
 
     // Attribute Binding: how to extract a chunk of attribute vertex data
-    // from binding description. Here we have 2: position, color
-    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDesc()
+    // from binding description. Here we have 3: position, color, textCoord
+    static std::array<VkVertexInputAttributeDescription, 3> getAttributeDesc()
     {
-        std::array<VkVertexInputAttributeDescription, 2> vertexInputAttributeDesc{};
-        const int iPos = 0;
-        const int iColor = 1;
+        std::array<VkVertexInputAttributeDescription, 3> vertexInputAttributeDesc{};
+        const int iPos      = 0;
+        const int iColor    = 1;
+        const int iTex      = 2;
 
         vertexInputAttributeDesc[iPos].binding  = 0;    // from which binding per-vertex comes from
         vertexInputAttributeDesc[iPos].location = 0;    // in the shader, (location = x)
@@ -105,6 +107,11 @@ struct Vertex
         vertexInputAttributeDesc[iColor].location = 1;    // in the shader, (location = x)
         vertexInputAttributeDesc[iColor].format   = VK_FORMAT_R32G32B32_SFLOAT;
         vertexInputAttributeDesc[iColor].offset   = offsetof(Vertex, color);
+
+        vertexInputAttributeDesc[iTex].binding  = 0;    // from which binding per-vertex comes from
+        vertexInputAttributeDesc[iTex].location = 2;    // in the shader, (location = x)
+        vertexInputAttributeDesc[iTex].format   = VK_FORMAT_R32G32_SFLOAT;
+        vertexInputAttributeDesc[iTex].offset   = offsetof(Vertex, texCoord);
 
         return vertexInputAttributeDesc;
     }
@@ -154,10 +161,10 @@ static std::vector<char> readFile(const std::string& filename)
 
 const std::vector<Vertex> vertices
 {                                       // Normalized Device Coordiante (NDC):
-    { {-0.5, -0.5}, {1.0, 0.0, 0.0} },  // [-1,-1]-------------[1,-1]
-    { {0.5, -0.5}, {0.0, 1.0, 0.0} },   //    |                  |
-    { {0.5, 0.5}, {0.0, 1.0, 0.0} },    //    |                  |
-    { {-0.5, 0.5}, {0.0, 0.0, 1.0} }    // [-1, 1]-------------[1, 1]
+    { {-0.5, -0.5}, {1.0, 0.0, 0.0}, {1.0, 0.0} },  // [-1,-1]-------------[1,-1]
+    { {0.5, -0.5}, {0.0, 1.0, 0.0}, {0.0, 0.0} },   //    |                  |
+    { {0.5, 0.5}, {0.0, 1.0, 0.0}, {0.0, 1.0} },    //    |                  |
+    { {-0.5, 0.5}, {0.0, 0.0, 1.0}, {1.0, 1.0} }    // [-1, 1]-------------[1, 1]
 };
 
 const std::vector<uint32_t> indices
@@ -1222,7 +1229,8 @@ bool VulkanManager::createRenderPass()
 
 bool VulkanManager::createDescriptorSetLayout()
 {
-    // Uniform Buffer Object (UBO) is one of the available descriptors
+    // Uniform Buffer Object (UBO)
+    //
     VkDescriptorSetLayoutBinding uboLayoutBinding{};
     uboLayoutBinding.binding            = 0;
     uboLayoutBinding.descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -1232,10 +1240,24 @@ bool VulkanManager::createDescriptorSetLayout()
     uboLayoutBinding.stageFlags         = VK_SHADER_STAGE_VERTEX_BIT;
     uboLayoutBinding.pImmutableSamplers = nullptr;  // optional
 
+    // Combined Image Sampler
+    //
+    VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+    samplerLayoutBinding.binding            = 1;
+    samplerLayoutBinding.descriptorCount    = 1;
+    samplerLayoutBinding.descriptorType     = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerLayoutBinding.stageFlags         = VK_SHADER_STAGE_FRAGMENT_BIT;
+    samplerLayoutBinding.pImmutableSamplers = nullptr;
+
+    std::array<VkDescriptorSetLayoutBinding, 2> bindings =
+    {
+        {uboLayoutBinding, samplerLayoutBinding}
+    };
+
     VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo{};
     descriptorSetLayoutInfo.sType           = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    descriptorSetLayoutInfo.bindingCount    = 1;
-    descriptorSetLayoutInfo.pBindings       = &uboLayoutBinding;
+    descriptorSetLayoutInfo.bindingCount    = bindings.size();
+    descriptorSetLayoutInfo.pBindings       = bindings.data();
 
     if (vkCreateDescriptorSetLayout(m_device, &descriptorSetLayoutInfo, nullptr, &m_descriptorSetLayout)
         != VK_SUCCESS)
@@ -1256,14 +1278,16 @@ bool VulkanManager::createDescriptorPool()
     // Descriptor Sets CANNOT be created directly, it needs to be allocated through a pool
     // just like command buffers.
 
-    VkDescriptorPoolSize descriptorPoolSize{};
-    descriptorPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptorPoolSize.descriptorCount = static_cast<uint32_t>(m_swapchainImages.size());
+    std::array<VkDescriptorPoolSize, 2> descriptorPoolSizes{};
+    descriptorPoolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorPoolSizes[0].descriptorCount = static_cast<uint32_t>(m_swapchainImages.size());
+    descriptorPoolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorPoolSizes[1].descriptorCount = static_cast<uint32_t>(m_swapchainImages.size());
 
     VkDescriptorPoolCreateInfo descriptorPoolInfo{};
     descriptorPoolInfo.sType            = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    descriptorPoolInfo.poolSizeCount    = 1;
-    descriptorPoolInfo.pPoolSizes       = &descriptorPoolSize;
+    descriptorPoolInfo.poolSizeCount    = descriptorPoolSizes.size();
+    descriptorPoolInfo.pPoolSizes       = descriptorPoolSizes.data();
     descriptorPoolInfo.maxSets          = static_cast<uint32_t>(m_swapchainImages.size());
 
     if (vkCreateDescriptorPool(m_device, &descriptorPoolInfo, nullptr, &m_descriptorPool)
@@ -1301,24 +1325,38 @@ bool VulkanManager::createDescriptorSets()
     for (size_t i = 0; i < m_swapchainImages.size(); ++i)
     {
         // specifies buffer and the region
+        //
+        // Uniform Buffer
         VkDescriptorBufferInfo descriptorBufferInfo{};
         descriptorBufferInfo.buffer = m_uniformBuffers[i];
         descriptorBufferInfo.offset = 0;
         descriptorBufferInfo.range  = sizeof(UniformBufferObject);
 
-        // descriptor set configuration
-        VkWriteDescriptorSet writeDescriptorSet{};
-        writeDescriptorSet.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writeDescriptorSet.dstSet           = m_descriptorSets[i];
-        writeDescriptorSet.dstBinding       = 0;
-        writeDescriptorSet.dstArrayElement  = 0;    // descriptor can be arrays, yet in our case is 0
-        writeDescriptorSet.descriptorType   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writeDescriptorSet.descriptorCount  = 1;
-        writeDescriptorSet.pBufferInfo      = &descriptorBufferInfo;
-        writeDescriptorSet.pImageInfo       = nullptr;  // optional
-        writeDescriptorSet.pTexelBufferView = nullptr;  // optional
+        // Image Buffer
+        VkDescriptorImageInfo descriptorImageInfo{};
+        descriptorImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        descriptorImageInfo.imageView   = m_textureImageView;
+        descriptorImageInfo.sampler     = m_textureSampler;
 
-        vkUpdateDescriptorSets(m_device, 1, &writeDescriptorSet, 0, nullptr);
+        // descriptor set configuration
+        std::array<VkWriteDescriptorSet, 2> writeDescriptorSets{};
+        writeDescriptorSets[0].sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writeDescriptorSets[0].dstSet           = m_descriptorSets[i];
+        writeDescriptorSets[0].dstBinding       = 0;
+        writeDescriptorSets[0].dstArrayElement  = 0;    // descriptor can be arrays, yet in our case is 0
+        writeDescriptorSets[0].descriptorType   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writeDescriptorSets[0].descriptorCount  = 1;
+        writeDescriptorSets[0].pBufferInfo      = &descriptorBufferInfo;
+
+        writeDescriptorSets[1].sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writeDescriptorSets[1].dstSet           = m_descriptorSets[i];
+        writeDescriptorSets[1].dstBinding       = 1;
+        writeDescriptorSets[1].dstArrayElement  = 0;    // descriptor can be arrays, yet in our case is 0
+        writeDescriptorSets[1].descriptorType   = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writeDescriptorSets[1].descriptorCount  = 1;
+        writeDescriptorSets[1].pImageInfo       = &descriptorImageInfo;
+
+        vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
     }
 
     if (result == true)
