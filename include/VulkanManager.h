@@ -106,6 +106,9 @@ private:
     void transitionImageLayout(VkImage img, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
     void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
 
+    // << Image Samplers >>
+    bool createTextureSampler();
+
     // << Command Buffers >>
     bool            createCommandPool();
     bool            createCommandBuffers();
@@ -154,6 +157,7 @@ private:
     // << Image Views >>
     std::vector<VkImageView>        m_swapchainImageViews;
     VkImageView                     m_textureImageView;
+    VkSampler                       m_textureSampler;
 
     // << Render Pass >>
     VkRenderPass                    m_renderPass;

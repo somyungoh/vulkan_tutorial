@@ -219,6 +219,7 @@ void VulkanManager::initVulkan(GLFWwindow* window)
 
     result &= createTextureImage();
     result &= createTextureImageView();
+    result &= createTextureSampler();
 
     result &= createVertexBuffer();
     result &= createIndexBuffer();
@@ -589,7 +590,13 @@ bool VulkanManager::isDeviceSuitable(VkPhysicalDevice device)
             PRINTLN("Extension) Swapchain supported for this device");
     }
 
-    return indices.isComplete() && extensionSupported && swapchainAdequate;
+    VkPhysicalDeviceFeatures supportedFeatures;
+    vkGetPhysicalDeviceFeatures(device, &supportedFeatures);
+
+    return  indices.isComplete() &&
+            extensionSupported &&
+            swapchainAdequate &&
+            supportedFeatures.samplerAnisotropy;
 }
 
 // this will check whether the physical device supports everything
@@ -696,6 +703,7 @@ bool VulkanManager::createLogicalDevice()
     // 2. Specify used device features, the features that we queried previously
     // using 'VkPhysicalDeviceFeatures' (e.g. geometry shaders)
     VkPhysicalDeviceFeatures deviceFeatures{};
+    deviceFeatures.samplerAnisotropy = VK_TRUE;
 
     // 3. Create the logical device
     VkDeviceCreateInfo deviceCreateInfo{};
@@ -1059,6 +1067,63 @@ bool VulkanManager::createImageView(VkImage image, VkFormat format,  VkImageView
 
     if (vkCreateImageView(m_device, &imageViewCreateInfo, nullptr, outImageView) != VK_SUCCESS)
         return false;
+
+    return true;
+}
+
+
+// ---------------------------<<  Image Sampler  >>----------------------------
+//
+//  It is possible for Swapcahin to read the image directly from the image view,
+//  however this is not common for textures. We put a intermediate - sampler.
+//  We can handle anisotropy, over/under sampling - like issues through the
+//  image sampler.
+//
+// ----------------------------------------------------------------------------
+
+bool VulkanManager::createTextureSampler()
+{
+    VkSamplerCreateInfo samplerCreateInfo{};
+    samplerCreateInfo.sType     = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    // interpolation types when magified/minified. available types are:
+    // VK_FILTER_LINEAR or VK_FILTER_NEAREST
+    samplerCreateInfo.magFilter = VK_FILTER_LINEAR;
+    samplerCreateInfo.minFilter = VK_FILTER_LINEAR;
+    // addressing mode (sampling outside of the image):
+    // VK_SAMPLER_ADDRESS_MODE_REPEAT
+    // VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT
+    // VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+    // VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE
+    // VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER
+    samplerCreateInfo.addressModeU  = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerCreateInfo.addressModeV  = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerCreateInfo.addressModeW  = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    // anisotrophy. it requires to load the maximum capability from the device
+    VkPhysicalDeviceProperties deviceProperties{};
+    vkGetPhysicalDeviceProperties(m_physicalDevice, &deviceProperties);
+    samplerCreateInfo.anisotropyEnable  = VK_TRUE;
+    samplerCreateInfo.maxAnisotropy     = deviceProperties.limits.maxSamplerAnisotropy;
+
+    samplerCreateInfo.borderColor       = VK_BORDER_COLOR_INT_OPAQUE_BLACK;   // color outside sampling region
+    // VK_TRUE: [0,0 ~ width,height]
+    // VK_FALSE: [0,0 ~ 1,1]
+    samplerCreateInfo.unnormalizedCoordinates   = VK_FALSE;
+    // compare: if enabled, the texel is compared with a value then returned.
+    samplerCreateInfo.compareEnable             = VK_FALSE;
+    samplerCreateInfo.compareOp                 = VK_COMPARE_OP_ALWAYS;
+    // mipmapping
+    samplerCreateInfo.mipmapMode    = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerCreateInfo.mipLodBias    = 0.0f;
+    samplerCreateInfo.minLod        = 0.0f;
+    samplerCreateInfo.maxLod        = 0.0f;
+
+    if(vkCreateSampler(m_device, &samplerCreateInfo, nullptr, &m_textureSampler) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to create texture sampler!");
+        return false;
+    }
+
+    PRINTLN("Created Texture Sampler");
 
     return true;
 }
@@ -2425,6 +2490,7 @@ void VulkanManager::cleanVulkan()
 
     cleanSwapChain();
 
+    vkDestroySampler(m_device, m_textureSampler, nullptr);
     vkDestroyImageView(m_device, m_textureImageView, nullptr);
     vkDestroyImage(m_device, m_textureImage, nullptr);
     vkFreeMemory(m_device, m_textureImageMemory, nullptr);
