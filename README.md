@@ -4,4 +4,4 @@ Repository for learning Vulkan following [Vulkan Tutorial](https://vulkan-tutori
 
 ![img](snapshots/salut_triangle.png)
 
-![img](snapshots/bonjour_rectangle.png)
+![img](snapshots/pizza_texture.png)
