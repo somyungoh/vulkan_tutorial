@@ -1994,7 +1994,7 @@ bool VulkanManager::createTextureImage()
 {
     // load image file
     int imgWidth, imgHeight, imgChannels;
-    stbi_uc* pixels = stbi_load("../src/images/beef.jpg", &imgWidth, &imgHeight, &imgChannels, STBI_rgb_alpha);
+    stbi_uc* pixels = stbi_load("../src/images/pizza.jpg", &imgWidth, &imgHeight, &imgChannels, STBI_rgb_alpha);
 
     bool result = true;
 
@@ -2452,7 +2452,7 @@ void VulkanManager::updateUniformBuffer(uint32_t currentImangeIdx)
     UniformBufferObject ubo{};
     ubo.model = glm::rotate(glm::mat4(1.0f), dt * glm::radians(90.f), glm::vec3(0.0f, 0.0f, 1.0f));
     ubo.view = glm::lookAt(glm::vec3(2.0f), glm::vec3(0.0), glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.proj = glm::perspective(glm::radians(45.f), m_swapchainExtent.width / (float)m_swapchainExtent.height, 0.1f, 10.f);
+    ubo.proj = glm::perspective(glm::radians(30.f), m_swapchainExtent.width / (float)m_swapchainExtent.height, 0.1f, 10.f);
     ubo.proj[1][1] *= -1;   // flip Y-axis (because glm was designed for OpenGL)
 
     // apply transformation
