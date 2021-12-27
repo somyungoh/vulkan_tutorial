@@ -24,8 +24,8 @@ private:
 
     // GLFW Window
     GLFWwindow*     m_window;
-    const uint32_t  WIDTH;
-    const uint32_t  HEIGHT;
+    const uint32_t  m_width;
+    const uint32_t  m_height;
 
     // Vulkan Manager
     VulkanManager*  m_VulkanManager;
