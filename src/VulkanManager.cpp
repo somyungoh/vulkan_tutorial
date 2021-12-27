@@ -25,6 +25,10 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+// stb
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 // std
 #include <optional>
 #include <map>
@@ -41,8 +45,8 @@
 #define MAX_FRAMES_IN_FLIGHT 2
 #define USE_STAGING_BUFFER    // see createVertexBuffer()
 
-
 // ---------------------------< Struct definitions >-----------------------------
+
 struct QueueFamilyIndices
 {
     // std::optional - c++17 extension, which contains nothing until
@@ -64,6 +68,7 @@ struct Vertex
 {
     glm::vec2 pos;
     glm::vec3 color;
+    glm::vec2 texCoord;
 
     // Vertex Binding: describes at which rate the vertex data should be loaded.
     static VkVertexInputBindingDescription getBindingDesc()
@@ -80,12 +85,13 @@ struct Vertex
     }
 
     // Attribute Binding: how to extract a chunk of attribute vertex data
-    // from binding description. Here we have 2: position, color
-    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDesc()
+    // from binding description. Here we have 3: position, color, textCoord
+    static std::array<VkVertexInputAttributeDescription, 3> getAttributeDesc()
     {
-        std::array<VkVertexInputAttributeDescription, 2> vertexInputAttributeDesc{};
-        const int iPos = 0;
-        const int iColor = 1;
+        std::array<VkVertexInputAttributeDescription, 3> vertexInputAttributeDesc{};
+        const int iPos      = 0;
+        const int iColor    = 1;
+        const int iTex      = 2;
 
         vertexInputAttributeDesc[iPos].binding  = 0;    // from which binding per-vertex comes from
         vertexInputAttributeDesc[iPos].location = 0;    // in the shader, (location = x)
@@ -101,6 +107,11 @@ struct Vertex
         vertexInputAttributeDesc[iColor].location = 1;    // in the shader, (location = x)
         vertexInputAttributeDesc[iColor].format   = VK_FORMAT_R32G32B32_SFLOAT;
         vertexInputAttributeDesc[iColor].offset   = offsetof(Vertex, color);
+
+        vertexInputAttributeDesc[iTex].binding  = 0;    // from which binding per-vertex comes from
+        vertexInputAttributeDesc[iTex].location = 2;    // in the shader, (location = x)
+        vertexInputAttributeDesc[iTex].format   = VK_FORMAT_R32G32_SFLOAT;
+        vertexInputAttributeDesc[iTex].offset   = offsetof(Vertex, texCoord);
 
         return vertexInputAttributeDesc;
     }
@@ -150,10 +161,10 @@ static std::vector<char> readFile(const std::string& filename)
 
 const std::vector<Vertex> vertices
 {                                       // Normalized Device Coordiante (NDC):
-    { {-0.5, -0.5}, {1.0, 0.0, 0.0} },  // [-1,-1]-------------[1,-1]
-    { {0.5, -0.5}, {0.0, 1.0, 0.0} },   //    |                  |
-    { {0.5, 0.5}, {0.0, 1.0, 0.0} },    //    |                  |
-    { {-0.5, 0.5}, {0.0, 0.0, 1.0} }    // [-1, 1]-------------[1, 1]
+    { {-0.5, -0.5}, {1.0, 0.0, 0.0}, {1.0, 0.0} },  // [-1,-1]-------------[1,-1]
+    { {0.5, -0.5}, {0.0, 1.0, 0.0}, {0.0, 0.0} },   //    |                  |
+    { {0.5, 0.5}, {0.0, 1.0, 0.0}, {0.0, 1.0} },    //    |                  |
+    { {-0.5, 0.5}, {0.0, 0.0, 1.0}, {1.0, 1.0} }    // [-1, 1]-------------[1, 1]
 };
 
 const std::vector<uint32_t> indices
@@ -212,6 +223,11 @@ void VulkanManager::initVulkan(GLFWwindow* window)
     // Drawing
     result &= createFrameBuffers();
     result &= createCommandPool();
+
+    result &= createTextureImage();
+    result &= createTextureImageView();
+    result &= createTextureSampler();
+
     result &= createVertexBuffer();
     result &= createIndexBuffer();
     result &= createUniformBuffers();
@@ -581,7 +597,13 @@ bool VulkanManager::isDeviceSuitable(VkPhysicalDevice device)
             PRINTLN("Extension) Swapchain supported for this device");
     }
 
-    return indices.isComplete() && extensionSupported && swapchainAdequate;
+    VkPhysicalDeviceFeatures supportedFeatures;
+    vkGetPhysicalDeviceFeatures(device, &supportedFeatures);
+
+    return  indices.isComplete() &&
+            extensionSupported &&
+            swapchainAdequate &&
+            supportedFeatures.samplerAnisotropy;
 }
 
 // this will check whether the physical device supports everything
@@ -688,6 +710,7 @@ bool VulkanManager::createLogicalDevice()
     // 2. Specify used device features, the features that we queried previously
     // using 'VkPhysicalDeviceFeatures' (e.g. geometry shaders)
     VkPhysicalDeviceFeatures deviceFeatures{};
+    deviceFeatures.samplerAnisotropy = VK_TRUE;
 
     // 3. Create the logical device
     VkDeviceCreateInfo deviceCreateInfo{};
@@ -1002,32 +1025,7 @@ bool VulkanManager::createImageViews()
 
     for (int i = 0; i < m_swapchainImageViews.size(); i++)
     {
-        // initialize each slots
-        VkImageViewCreateInfo imageViewCreateInfo{};
-        imageViewCreateInfo.sType       = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        imageViewCreateInfo.image       = m_swapchainImages[i];
-        imageViewCreateInfo.viewType    = VK_IMAGE_VIEW_TYPE_2D;
-        imageViewCreateInfo.format      = m_swapchainImageFormat;
-        // [components] field allows to swizzle the color channels (i.e. map
-        // all colors to the red channel), but we stick to the default.
-        imageViewCreateInfo.components.r    = VK_COMPONENT_SWIZZLE_IDENTITY;
-        imageViewCreateInfo.components.g    = VK_COMPONENT_SWIZZLE_IDENTITY;
-        imageViewCreateInfo.components.b    = VK_COMPONENT_SWIZZLE_IDENTITY;
-        imageViewCreateInfo.components.a    = VK_COMPONENT_SWIZZLE_IDENTITY;
-        // [subresourceRange] field defines the image's purpose and which
-        // part of the image is accessed.
-        imageViewCreateInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;    // used as color targets
-        imageViewCreateInfo.subresourceRange.baseMipLevel   = 0;    // no mipmaps
-        imageViewCreateInfo.subresourceRange.levelCount     = 1;
-        imageViewCreateInfo.subresourceRange.baseArrayLayer = 0;
-        imageViewCreateInfo.subresourceRange.layerCount     = 1;
-
-        // create image view
-        VkResult result = vkCreateImageView(m_device,
-                                            &imageViewCreateInfo,
-                                            nullptr,
-                                            &m_swapchainImageViews[i]);
-        if (result != VK_SUCCESS)
+        if (!createImageView(m_swapchainImages[i], m_swapchainImageFormat, &m_swapchainImageViews[i]))
         {
             throw std::runtime_error("failed to create image views!");
             return false;
@@ -1037,6 +1035,106 @@ bool VulkanManager::createImageViews()
     PRINTLN("Created Image Views");
     return true;
 }
+
+bool VulkanManager::createTextureImageView()
+{
+    bool result = true;
+    if (!createImageView(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, &m_textureImageView))
+    {
+        throw std::runtime_error("failed to create texture image view!");
+        result = false;
+    }
+
+    return result;
+}
+
+bool VulkanManager::createImageView(VkImage image, VkFormat format,  VkImageView* outImageView)
+{
+    // How shader will read the images.
+    // Recall that images are read through VkImageView rather than directly
+
+    VkImageViewCreateInfo imageViewCreateInfo{};
+    imageViewCreateInfo.sType       = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    imageViewCreateInfo.image       = image;
+    imageViewCreateInfo.viewType    = VK_IMAGE_VIEW_TYPE_2D;
+    imageViewCreateInfo.format      = format;
+    // [components] field allows to swizzle the color channels (i.e. map
+    // all colors to the red channel), but we stick to the default.
+    imageViewCreateInfo.components.r    = VK_COMPONENT_SWIZZLE_IDENTITY;
+    imageViewCreateInfo.components.g    = VK_COMPONENT_SWIZZLE_IDENTITY;
+    imageViewCreateInfo.components.b    = VK_COMPONENT_SWIZZLE_IDENTITY;
+    imageViewCreateInfo.components.a    = VK_COMPONENT_SWIZZLE_IDENTITY;
+    // [subresourceRange] field defines the image's purpose and which
+    // part of the image is accessed.
+    imageViewCreateInfo.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+    imageViewCreateInfo.subresourceRange.baseMipLevel   = 0;
+    imageViewCreateInfo.subresourceRange.levelCount     = 1;
+    imageViewCreateInfo.subresourceRange.baseArrayLayer = 0;
+    imageViewCreateInfo.subresourceRange.layerCount     = 1;
+
+    if (vkCreateImageView(m_device, &imageViewCreateInfo, nullptr, outImageView) != VK_SUCCESS)
+        return false;
+
+    return true;
+}
+
+
+// ---------------------------<<  Image Sampler  >>----------------------------
+//
+//  It is possible for Swapcahin to read the image directly from the image view,
+//  however this is not common for textures. We put a intermediate - sampler.
+//  We can handle anisotropy, over/under sampling - like issues through the
+//  image sampler.
+//
+// ----------------------------------------------------------------------------
+
+bool VulkanManager::createTextureSampler()
+{
+    VkSamplerCreateInfo samplerCreateInfo{};
+    samplerCreateInfo.sType     = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    // interpolation types when magified/minified. available types are:
+    // VK_FILTER_LINEAR or VK_FILTER_NEAREST
+    samplerCreateInfo.magFilter = VK_FILTER_LINEAR;
+    samplerCreateInfo.minFilter = VK_FILTER_LINEAR;
+    // addressing mode (sampling outside of the image):
+    // VK_SAMPLER_ADDRESS_MODE_REPEAT
+    // VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT
+    // VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+    // VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE
+    // VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER
+    samplerCreateInfo.addressModeU  = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerCreateInfo.addressModeV  = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerCreateInfo.addressModeW  = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    // anisotrophy. it requires to load the maximum capability from the device
+    VkPhysicalDeviceProperties deviceProperties{};
+    vkGetPhysicalDeviceProperties(m_physicalDevice, &deviceProperties);
+    samplerCreateInfo.anisotropyEnable  = VK_TRUE;
+    samplerCreateInfo.maxAnisotropy     = deviceProperties.limits.maxSamplerAnisotropy;
+
+    samplerCreateInfo.borderColor       = VK_BORDER_COLOR_INT_OPAQUE_BLACK;   // color outside sampling region
+    // VK_TRUE: [0,0 ~ width,height]
+    // VK_FALSE: [0,0 ~ 1,1]
+    samplerCreateInfo.unnormalizedCoordinates   = VK_FALSE;
+    // compare: if enabled, the texel is compared with a value then returned.
+    samplerCreateInfo.compareEnable             = VK_FALSE;
+    samplerCreateInfo.compareOp                 = VK_COMPARE_OP_ALWAYS;
+    // mipmapping
+    samplerCreateInfo.mipmapMode    = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerCreateInfo.mipLodBias    = 0.0f;
+    samplerCreateInfo.minLod        = 0.0f;
+    samplerCreateInfo.maxLod        = 0.0f;
+
+    if(vkCreateSampler(m_device, &samplerCreateInfo, nullptr, &m_textureSampler) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to create texture sampler!");
+        return false;
+    }
+
+    PRINTLN("Created Texture Sampler");
+
+    return true;
+}
+
 
 // -------------------------<<  Render Passes  >>----------------------------
 //
@@ -1131,7 +1229,8 @@ bool VulkanManager::createRenderPass()
 
 bool VulkanManager::createDescriptorSetLayout()
 {
-    // Uniform Buffer Object (UBO) is one of the available descriptors
+    // Uniform Buffer Object (UBO)
+    //
     VkDescriptorSetLayoutBinding uboLayoutBinding{};
     uboLayoutBinding.binding            = 0;
     uboLayoutBinding.descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -1141,10 +1240,24 @@ bool VulkanManager::createDescriptorSetLayout()
     uboLayoutBinding.stageFlags         = VK_SHADER_STAGE_VERTEX_BIT;
     uboLayoutBinding.pImmutableSamplers = nullptr;  // optional
 
+    // Combined Image Sampler
+    //
+    VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+    samplerLayoutBinding.binding            = 1;
+    samplerLayoutBinding.descriptorCount    = 1;
+    samplerLayoutBinding.descriptorType     = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerLayoutBinding.stageFlags         = VK_SHADER_STAGE_FRAGMENT_BIT;
+    samplerLayoutBinding.pImmutableSamplers = nullptr;
+
+    std::array<VkDescriptorSetLayoutBinding, 2> bindings =
+    {
+        {uboLayoutBinding, samplerLayoutBinding}
+    };
+
     VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo{};
     descriptorSetLayoutInfo.sType           = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    descriptorSetLayoutInfo.bindingCount    = 1;
-    descriptorSetLayoutInfo.pBindings       = &uboLayoutBinding;
+    descriptorSetLayoutInfo.bindingCount    = bindings.size();
+    descriptorSetLayoutInfo.pBindings       = bindings.data();
 
     if (vkCreateDescriptorSetLayout(m_device, &descriptorSetLayoutInfo, nullptr, &m_descriptorSetLayout)
         != VK_SUCCESS)
@@ -1165,14 +1278,16 @@ bool VulkanManager::createDescriptorPool()
     // Descriptor Sets CANNOT be created directly, it needs to be allocated through a pool
     // just like command buffers.
 
-    VkDescriptorPoolSize descriptorPoolSize{};
-    descriptorPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptorPoolSize.descriptorCount = static_cast<uint32_t>(m_swapchainImages.size());
+    std::array<VkDescriptorPoolSize, 2> descriptorPoolSizes{};
+    descriptorPoolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorPoolSizes[0].descriptorCount = static_cast<uint32_t>(m_swapchainImages.size());
+    descriptorPoolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorPoolSizes[1].descriptorCount = static_cast<uint32_t>(m_swapchainImages.size());
 
     VkDescriptorPoolCreateInfo descriptorPoolInfo{};
     descriptorPoolInfo.sType            = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    descriptorPoolInfo.poolSizeCount    = 1;
-    descriptorPoolInfo.pPoolSizes       = &descriptorPoolSize;
+    descriptorPoolInfo.poolSizeCount    = descriptorPoolSizes.size();
+    descriptorPoolInfo.pPoolSizes       = descriptorPoolSizes.data();
     descriptorPoolInfo.maxSets          = static_cast<uint32_t>(m_swapchainImages.size());
 
     if (vkCreateDescriptorPool(m_device, &descriptorPoolInfo, nullptr, &m_descriptorPool)
@@ -1210,24 +1325,38 @@ bool VulkanManager::createDescriptorSets()
     for (size_t i = 0; i < m_swapchainImages.size(); ++i)
     {
         // specifies buffer and the region
+        //
+        // Uniform Buffer
         VkDescriptorBufferInfo descriptorBufferInfo{};
         descriptorBufferInfo.buffer = m_uniformBuffers[i];
         descriptorBufferInfo.offset = 0;
         descriptorBufferInfo.range  = sizeof(UniformBufferObject);
 
-        // descriptor set configuration
-        VkWriteDescriptorSet writeDescriptorSet{};
-        writeDescriptorSet.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writeDescriptorSet.dstSet           = m_descriptorSets[i];
-        writeDescriptorSet.dstBinding       = 0;
-        writeDescriptorSet.dstArrayElement  = 0;    // descriptor can be arrays, yet in our case is 0
-        writeDescriptorSet.descriptorType   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writeDescriptorSet.descriptorCount  = 1;
-        writeDescriptorSet.pBufferInfo      = &descriptorBufferInfo;
-        writeDescriptorSet.pImageInfo       = nullptr;  // optional
-        writeDescriptorSet.pTexelBufferView = nullptr;  // optional
+        // Image Buffer
+        VkDescriptorImageInfo descriptorImageInfo{};
+        descriptorImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        descriptorImageInfo.imageView   = m_textureImageView;
+        descriptorImageInfo.sampler     = m_textureSampler;
 
-        vkUpdateDescriptorSets(m_device, 1, &writeDescriptorSet, 0, nullptr);
+        // descriptor set configuration
+        std::array<VkWriteDescriptorSet, 2> writeDescriptorSets{};
+        writeDescriptorSets[0].sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writeDescriptorSets[0].dstSet           = m_descriptorSets[i];
+        writeDescriptorSets[0].dstBinding       = 0;
+        writeDescriptorSets[0].dstArrayElement  = 0;    // descriptor can be arrays, yet in our case is 0
+        writeDescriptorSets[0].descriptorType   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writeDescriptorSets[0].descriptorCount  = 1;
+        writeDescriptorSets[0].pBufferInfo      = &descriptorBufferInfo;
+
+        writeDescriptorSets[1].sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writeDescriptorSets[1].dstSet           = m_descriptorSets[i];
+        writeDescriptorSets[1].dstBinding       = 1;
+        writeDescriptorSets[1].dstArrayElement  = 0;    // descriptor can be arrays, yet in our case is 0
+        writeDescriptorSets[1].descriptorType   = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writeDescriptorSets[1].descriptorCount  = 1;
+        writeDescriptorSets[1].pImageInfo       = &descriptorImageInfo;
+
+        vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
     }
 
     if (result == true)
@@ -1769,31 +1898,8 @@ bool VulkanManager::createIndexBuffer()
 bool VulkanManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize deviceSize)
 {
     // Copies the buffer one to another.
-
-    bool result = true;
-
 #ifdef USE_STAGING_BUFFER
-    // Memory transfer is also done through the command buffer, so we create another
-    // one-time short usage command buffer here
-    VkCommandBufferAllocateInfo cmdBufferAllocateInfo{};
-    cmdBufferAllocateInfo.sType                 = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    cmdBufferAllocateInfo.level                 = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    cmdBufferAllocateInfo.commandPool           = m_commandPool;
-    cmdBufferAllocateInfo.commandBufferCount    = 1;
-
-    VkCommandBuffer cmdBuffer;
-    if (vkAllocateCommandBuffers(m_device, &cmdBufferAllocateInfo, &cmdBuffer) != VK_SUCCESS)
-    {
-        throw std::runtime_error("failed to allocate command buffer!");
-        result = false;
-    }
-
-    VkCommandBufferBeginInfo cmdBufferBeginInfo{};
-    cmdBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    cmdBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; // use once, wait until finishing execution
-
-    // start filling command buffer
-    vkBeginCommandBuffer(cmdBuffer, &cmdBufferBeginInfo);
+    VkCommandBuffer cmdBuffer = beginSingleTimeCommands();
 
     // copy command
     VkBufferCopy copyRegion{};
@@ -1802,23 +1908,10 @@ bool VulkanManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceS
     copyRegion.dstOffset = 0;   // optional
     vkCmdCopyBuffer(cmdBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
 
-    vkEndCommandBuffer(cmdBuffer);
-
-    // Execute command buffer
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount   = 1;
-    submitInfo.pCommandBuffers      = &cmdBuffer;
-    vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-
-    // no other event to wait for here, execute immediately
-    vkQueueWaitIdle(m_graphicsQueue);   // or use vkWaitForFences
-
-    // cleanup command buffer
-    vkFreeCommandBuffers(m_device, m_commandPool, 1, &cmdBuffer);
+    endSingleTimeCommands(cmdBuffer);
 #endif
 
-    return result;
+    return true;
 }
 
 bool VulkanManager::createUniformBuffers()
@@ -1844,6 +1937,249 @@ bool VulkanManager::createUniformBuffers()
     PRINTLN("Created Uniform Buffer");
 
     return true;
+}
+
+VkCommandBuffer VulkanManager::beginSingleTimeCommands()
+{
+    VkCommandBufferAllocateInfo cmdBufferAllocateInfo{};
+    cmdBufferAllocateInfo.sType                 = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cmdBufferAllocateInfo.level                 = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cmdBufferAllocateInfo.commandPool           = m_commandPool;
+    cmdBufferAllocateInfo.commandBufferCount    = 1;
+
+    VkCommandBuffer cmdBuffer;
+    if (vkAllocateCommandBuffers(m_device, &cmdBufferAllocateInfo, &cmdBuffer) != VK_SUCCESS)
+        throw std::runtime_error("failed to allocate command buffer!");
+
+    VkCommandBufferBeginInfo cmdBufferBeginInfo{};
+    cmdBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    cmdBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; // use once, wait until finishing execution
+
+    // start filling command buffer
+    vkBeginCommandBuffer(cmdBuffer, &cmdBufferBeginInfo);
+
+    return cmdBuffer;
+}
+
+void VulkanManager::endSingleTimeCommands(VkCommandBuffer cmdBuffer)
+{
+    vkEndCommandBuffer(cmdBuffer);
+
+    // Execute command buffer
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount   = 1;
+    submitInfo.pCommandBuffers      = &cmdBuffer;
+    vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+
+    // no other event to wait for here, execute immediately
+    vkQueueWaitIdle(m_graphicsQueue);   // or use vkWaitForFences
+
+    // cleanup command buffer
+    vkFreeCommandBuffers(m_device, m_commandPool, 1, &cmdBuffer);
+}
+
+
+// ------------------------<<  Texture Mapping  >>---------------------------
+//
+//  Adding a texture involves four steps:
+//  1) create image object in the device memory (staging)
+//  2) fill it with the pixels
+//  3) create an image sampler
+//  4) add a combined image sampler descriptor to sample colors from the textures
+//
+// --------------------------------------------------------------------------
+
+bool VulkanManager::createTextureImage()
+{
+    // load image file
+    int imgWidth, imgHeight, imgChannels;
+    stbi_uc* pixels = stbi_load("../src/images/pizza.jpg", &imgWidth, &imgHeight, &imgChannels, STBI_rgb_alpha);
+
+    bool result = true;
+
+    if (!pixels)
+    {
+        throw std::runtime_error("failed to load image!");
+        result = false;
+    }
+
+    // staging buffer
+    //
+    VkBuffer        stagingBuffer;
+    VkDeviceMemory  stagingBufferMemory;
+    VkDeviceSize    imgSize = imgWidth * imgHeight * 4;
+
+    createBuffer(imgSize,
+                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 stagingBuffer,
+                 stagingBufferMemory);
+
+    // directly copy the image pixel data to the buffer
+    void* data;
+    vkMapMemory(m_device, stagingBufferMemory, 0, imgSize, 0, &data);
+    memcpy(data, pixels, static_cast<size_t>(imgSize));
+    vkUnmapMemory(m_device, stagingBufferMemory);
+
+    stbi_image_free(pixels);
+
+    // 1. Create Image
+    //
+    createImage(imgWidth, imgHeight,
+                VK_FORMAT_R8G8B8A8_SRGB,    // same foramt as 'pixels'
+                // two choice for tiling:
+                // - VK_IMAGE_TILING_LINEAR: texels in row-major, allowes direct access texels in the memory
+                 //                           which is not necessary if you are using staging buffer
+                 // - VK_IMAGE_TILING_OPTIMAL: more efficient for access from the shader
+                VK_IMAGE_TILING_OPTIMAL,
+                VK_IMAGE_USAGE_TRANSFER_DST_BIT | // our destination
+                VK_IMAGE_USAGE_SAMPLED_BIT,       // allow to access from the shader
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                m_textureImage,
+                m_textureImageMemory);
+
+    // 2. Copy staging buffer to the texture image
+    //
+    // transition the texture to VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL - optimal layout for copy
+    transitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    // execute copy command
+    copyBufferToImage(stagingBuffer, m_textureImage, static_cast<uint32_t>(imgWidth), static_cast<uint32_t>(imgHeight));
+    // another transition for shader access
+    transitionImageLayout(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    // cleanup
+    vkDestroyBuffer(m_device, stagingBuffer, nullptr);
+    vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+
+    if (result == true)
+        PRINTLN("created texture");
+
+    return result;
+}
+
+void VulkanManager::createImage(uint32_t width, uint32_t height,
+                                VkFormat format, VkImageTiling tiling,
+                                VkImageUsageFlags usage, VkMemoryPropertyFlags property,
+                                VkImage &image, VkDeviceMemory &imageMemory)
+{
+    // create image
+    VkImageCreateInfo imageCreateInfo{};
+    imageCreateInfo.sType           = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageCreateInfo.imageType       = VK_IMAGE_TYPE_2D;
+    imageCreateInfo.extent.width    = static_cast<uint32_t>(width);
+    imageCreateInfo.extent.height   = static_cast<uint32_t>(height);
+    imageCreateInfo.extent.depth    = 1;
+    imageCreateInfo.mipLevels       = 1;    // no mipmap
+    imageCreateInfo.arrayLayers     = 1;
+    imageCreateInfo.format          = format;
+    imageCreateInfo.tiling          = tiling;
+    imageCreateInfo.initialLayout   = VK_IMAGE_LAYOUT_UNDEFINED;        // no need to pre-initialize and preserve texels in our case
+    imageCreateInfo.usage           = usage;
+    imageCreateInfo.sharingMode     = VK_SHARING_MODE_EXCLUSIVE;
+    imageCreateInfo.samples         = VK_SAMPLE_COUNT_1_BIT;
+    imageCreateInfo.flags           = 0;    // optional
+
+    if (vkCreateImage(m_device, &imageCreateInfo, nullptr, &image) != VK_SUCCESS)
+        throw std::runtime_error("failed to create image!");
+
+    // memory allocation
+    VkMemoryRequirements memoryRequirements;
+    vkGetImageMemoryRequirements(m_device, image, &memoryRequirements);
+
+    VkMemoryAllocateInfo memoryAllocateInfo{};
+    memoryAllocateInfo.sType            = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    memoryAllocateInfo.allocationSize   = memoryRequirements.size;
+    memoryAllocateInfo.memoryTypeIndex  = findMemoryType(memoryRequirements.memoryTypeBits, property);
+
+    if (vkAllocateMemory(m_device, &memoryAllocateInfo, nullptr, &imageMemory) != VK_SUCCESS)
+        throw std::runtime_error("failed to allocate image memory!");
+
+    vkBindImageMemory(m_device, image, imageMemory, 0);
+}
+
+void VulkanManager::transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout)
+{
+    // handle image to be placed in the right layout
+
+    VkCommandBuffer cmdBuffer = beginSingleTimeCommands();
+
+    // Image barrier is one way (and most common) to handle layout transitions.
+    // Usually it is to sync. resource access (finish write before read), but here
+    // it is to transition image layout and transfer queue family owndership when
+    // VK_SHARING_MODE_EXCLUSIVE is set
+    VkImageMemoryBarrier imageMemoryBarrier{};
+    imageMemoryBarrier.sType        = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    imageMemoryBarrier.oldLayout    = oldLayout;    // VK_IMAGE_LAYOUT_UNDEFINED if you don't care about exsiting image
+    imageMemoryBarrier.newLayout    = newLayout;
+    // specify that the image is affected, the specific part of the image
+    // our setting is for a single image, not an array of images
+    imageMemoryBarrier.image        = image;
+    imageMemoryBarrier.subresourceRange.aspectMask      = VK_IMAGE_ASPECT_COLOR_BIT;
+    imageMemoryBarrier.subresourceRange.baseMipLevel    = 0;
+    imageMemoryBarrier.subresourceRange.levelCount      = 1;
+    imageMemoryBarrier.subresourceRange.baseArrayLayer  = 0;
+    imageMemoryBarrier.subresourceRange.layerCount      = 1;
+    // specify which type of operations will be done and needed to be waited before/after
+    // the barrier. We handle based on the layout type
+    VkPipelineStageFlags srcStage;
+    VkPipelineStageFlags dstStage;
+    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+    {
+        imageMemoryBarrier.srcAccessMask    = 0;
+        imageMemoryBarrier.dstAccessMask    = VK_ACCESS_TRANSFER_WRITE_BIT;
+        srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        dstStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    }
+    else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+    {
+        imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        imageMemoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        srcStage    = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        dstStage    = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    }
+    else
+        throw std::invalid_argument("unsupported layout transition!");
+
+    vkCmdPipelineBarrier(
+        cmdBuffer,
+        srcStage, dstStage, // in which pipeline stage that:  the operation occur, wait on the barrier
+        0,                  // or VK_DEPENDENCY_BY_REGION_BIT - can begin reading from parts of a resource that's written so far
+        0, nullptr,         // memory barriers
+        0, nullptr,         // buffer memory barriers
+        1, &imageMemoryBarrier // image memory barriers
+    );
+
+    endSingleTimeCommands(cmdBuffer);
+}
+
+void VulkanManager::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height)
+{
+    VkCommandBuffer cmdBuffer = beginSingleTimeCommands();
+
+    VkBufferImageCopy copyRegion{};
+    // data padding
+    copyRegion.bufferOffset         = 0;
+    copyRegion.bufferRowLength      = 0;
+    copyRegion.bufferImageHeight    = 0;
+    // which part of the image we want to copy
+    copyRegion.imageSubresource.aspectMask      = VK_IMAGE_ASPECT_COLOR_BIT;
+    copyRegion.imageSubresource.mipLevel        = 0;
+    copyRegion.imageSubresource.baseArrayLayer  = 0;
+    copyRegion.imageSubresource.layerCount      = 1;
+    copyRegion.imageOffset = {0, 0, 0};
+    copyRegion.imageExtent = {width, height, 1};
+
+    vkCmdCopyBufferToImage(
+        cmdBuffer,
+        buffer,
+        image,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,   // which layout the image is using (here we assume layout for copy)
+        1,
+        &copyRegion
+    );
+
+    endSingleTimeCommands(cmdBuffer);
 }
 
 
@@ -2116,7 +2452,7 @@ void VulkanManager::updateUniformBuffer(uint32_t currentImangeIdx)
     UniformBufferObject ubo{};
     ubo.model = glm::rotate(glm::mat4(1.0f), dt * glm::radians(90.f), glm::vec3(0.0f, 0.0f, 1.0f));
     ubo.view = glm::lookAt(glm::vec3(2.0f), glm::vec3(0.0), glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.proj = glm::perspective(glm::radians(45.f), m_swapchainExtent.width / (float)m_swapchainExtent.height, 0.1f, 10.f);
+    ubo.proj = glm::perspective(glm::radians(30.f), m_swapchainExtent.width / (float)m_swapchainExtent.height, 0.1f, 10.f);
     ubo.proj[1][1] *= -1;   // flip Y-axis (because glm was designed for OpenGL)
 
     // apply transformation
@@ -2159,6 +2495,7 @@ void VulkanManager::drawFrame()
     submitPresentation(m_curretFrameIndex, imgIndex);
 }
 
+
 // --------------------------<<  Exit  >>----------------------------
 //
 //  VkPhysicalDevice - automatically handled
@@ -2191,6 +2528,10 @@ void VulkanManager::cleanVulkan()
 
     cleanSwapChain();
 
+    vkDestroySampler(m_device, m_textureSampler, nullptr);
+    vkDestroyImageView(m_device, m_textureImageView, nullptr);
+    vkDestroyImage(m_device, m_textureImage, nullptr);
+    vkFreeMemory(m_device, m_textureImageMemory, nullptr);
     vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout, nullptr);
     vkDestroyBuffer(m_device, m_vertexBuffer, nullptr);
     vkFreeMemory(m_device, m_vertexBufferMemory, nullptr);

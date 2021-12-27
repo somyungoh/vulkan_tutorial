@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.0)
-project(Hello_Triangle VERSION 0.1.0)
+project(Hello_Vulkan VERSION 0.1.0)
 
 
 # --- Linking
@@ -36,18 +36,18 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 # --- Target Properties
 # sources
-add_executable(Hello_Triangle src/main.cpp src/HelloTriangleApp.cpp src/VulkanManager.cpp)
+add_executable(Hello_Vulkan src/main.cpp src/MyApp.cpp src/VulkanManager.cpp)
 
 # linking
-target_link_libraries(Hello_Triangle Vulkan)
-target_link_libraries(Hello_Triangle ${GLFW_LIBRARIES})
+target_link_libraries(Hello_Vulkan Vulkan)
+target_link_libraries(Hello_Vulkan ${GLFW_LIBRARIES})
 
 # include dirs
-target_include_directories(Hello_Triangle PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_include_directories(Hello_Vulkan PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
  
 # --- other properties
-set_property(TARGET Hello_Triangle PROPERTY CXX_STANDARD 17)
+set_property(TARGET Hello_Vulkan PROPERTY CXX_STANDARD 17)
 
 include(CTest)
 enable_testing()

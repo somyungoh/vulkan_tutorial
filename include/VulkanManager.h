@@ -74,6 +74,8 @@ private:
 
     // << Image Views >>
     bool createImageViews();
+    bool createTextureImageView();
+    bool createImageView(VkImage image, VkFormat format, VkImageView* outImageView);
 
     // << Descriptor Layout >>
     bool            createDescriptorSetLayout();
@@ -93,14 +95,25 @@ private:
     // << Vertex Buffers >>
     bool        createBuffer(VkDeviceSize, VkBufferUsageFlags, VkMemoryPropertyFlags, VkBuffer&, VkDeviceMemory&);
     bool        createVertexBuffer();
+    bool        createTextureImage();
     bool        createIndexBuffer();
     bool        createUniformBuffers();
     uint32_t    findMemoryType(uint32_t, VkMemoryPropertyFlags);
     bool        copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize deviceSize);
 
+    // << Images >>
+    void createImage(uint32_t w, uint32_t h, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags property, VkImage &img, VkDeviceMemory &mem);
+    void transitionImageLayout(VkImage img, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
+    void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
+
+    // << Image Samplers >>
+    bool createTextureSampler();
+
     // << Command Buffers >>
-    bool createCommandPool();
-    bool createCommandBuffers();
+    bool            createCommandPool();
+    bool            createCommandBuffers();
+    VkCommandBuffer beginSingleTimeCommands();
+    void            endSingleTimeCommands(VkCommandBuffer cmdBuffer);
 
     // << Rendering & Presentation >>
     bool  createSyncObjects();
@@ -143,6 +156,8 @@ private:
 
     // << Image Views >>
     std::vector<VkImageView>        m_swapchainImageViews;
+    VkImageView                     m_textureImageView;
+    VkSampler                       m_textureSampler;
 
     // << Render Pass >>
     VkRenderPass                    m_renderPass;
@@ -164,6 +179,8 @@ private:
     VkDeviceMemory                  m_vertexBufferMemory;
     VkBuffer                        m_indexBuffer;
     VkDeviceMemory                  m_indexBufferMemory;
+    VkImage                         m_textureImage;
+    VkDeviceMemory                  m_textureImageMemory;
 
     // << Uniform Buffers >>
     std::vector<VkBuffer>           m_uniformBuffers;
