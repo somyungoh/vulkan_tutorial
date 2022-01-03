@@ -184,11 +184,11 @@ VulkanManager::VulkanManager() :
     m_physicalDevice(VK_NULL_HANDLE),
     m_device(VK_NULL_HANDLE),
     m_validationLayers({ "VK_LAYER_KHRONOS_validation" }),
-    m_deviceExtensions({ VK_KHR_SWAPCHAIN_EXTENSION_NAME }),
+    m_deviceExtensions({ VK_KHR_SWAPCHAIN_EXTENSION_NAME, "VK_KHR_portability_subset" }),
     m_curretFrameIndex(0),
     m_frameBufferResized(false)
-    {
-    };
+{
+};
 
 
 void VulkanManager::initVulkan(GLFWwindow* window)
@@ -245,6 +245,39 @@ void VulkanManager::initVulkan(GLFWwindow* window)
     else
         PRINTLN("Vulkan Manager initialization finished with errors");
     PRINT_BAR_LINE();
+}
+
+void VulkanManager::drawFrame()
+{
+    m_curretFrameIndex = (m_curretFrameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
+    uint32_t imgIndex;
+    acquireNextImageIndex(m_curretFrameIndex, imgIndex);
+
+    updateUniformBuffer(imgIndex);
+
+    // CPU - GPU syncronization.
+    // Normally at this point, GPU work speed cannot follow up the CPU work
+    // submission speed, ending up submission queue growing by time. Validation
+    // Layer raises an error or warning about this if enbled.
+    // There are two ways you can handle this:
+#if 0
+    // Quick & lazy way
+    vkQueueWaitIdle(m_presentationQueue);   // no need of any fences
+#else
+    // Frames in Flight
+    // check if the previous image is using this image
+    if (m_imagesInFlight[imgIndex] != VK_NULL_HANDLE)
+        // Wait for any or all of the passed fences (VK_TRUE means wait for ALL of them).
+        vkWaitForFences(m_device, 1, &m_imagesInFlight[imgIndex], VK_TRUE, UINT64_MAX);
+    // mark current frame is using this image
+    m_imagesInFlight[imgIndex] = m_inFlightFences[m_curretFrameIndex];
+
+    // Reset fences into 'unsignaled' state
+    vkResetFences(m_device, 1, &m_inFlightFences[m_curretFrameIndex]);
+#endif
+
+    submitCommandBuffer(m_curretFrameIndex, imgIndex);
+    submitPresentation(m_curretFrameIndex, imgIndex);
 }
 
 
@@ -380,6 +413,7 @@ std::vector<const char*> VulkanManager::loadVKExtensions()
     // add debug messenger extension (allows message callbacks for validation layers)
     if (enableValidationLayers)
         VkExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    VkExtensions.push_back("VK_KHR_get_physical_device_properties2");
 
     return VkExtensions;
 }
@@ -2112,6 +2146,9 @@ void VulkanManager::transitionImageLayout(VkImage image, VkFormat format, VkImag
     imageMemoryBarrier.sType        = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     imageMemoryBarrier.oldLayout    = oldLayout;    // VK_IMAGE_LAYOUT_UNDEFINED if you don't care about exsiting image
     imageMemoryBarrier.newLayout    = newLayout;
+    // doesn't care about existing image
+    imageMemoryBarrier.srcQueueFamilyIndex  = VK_QUEUE_FAMILY_IGNORED;
+    imageMemoryBarrier.dstQueueFamilyIndex  = VK_QUEUE_FAMILY_IGNORED;
     // specify that the image is affected, the specific part of the image
     // our setting is for a single image, not an array of images
     imageMemoryBarrier.image        = image;
@@ -2460,39 +2497,6 @@ void VulkanManager::updateUniformBuffer(uint32_t currentImangeIdx)
     vkMapMemory(m_device, m_uniformBuffersMemory[currentImangeIdx], 0, sizeof(ubo), 0, &data);
     memcpy(data, &ubo, sizeof(ubo));
     vkUnmapMemory(m_device, m_uniformBuffersMemory[currentImangeIdx]);
-}
-
-void VulkanManager::drawFrame()
-{
-    m_curretFrameIndex = (m_curretFrameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
-    uint32_t imgIndex;
-    acquireNextImageIndex(m_curretFrameIndex, imgIndex);
-
-    updateUniformBuffer(imgIndex);
-
-    // CPU - GPU syncronization.
-    // Normally at this point, GPU work speed cannot follow up the CPU work
-    // submission speed, ending up submission queue growing by time. Validation
-    // Layer raises an error or warning about this if enbled.
-    // There are two ways you can handle this:
-#if 0
-    // Quick & lazy way
-    vkQueueWaitIdle(m_presentationQueue);   // no need of any fences
-#else
-    // Frames in Flight
-    // check if the previous image is using this image
-    if (m_imagesInFlight[imgIndex] != VK_NULL_HANDLE)
-        // Wait for any or all of the passed fences (VK_TRUE means wait for ALL of them).
-        vkWaitForFences(m_device, 1, &m_imagesInFlight[imgIndex], VK_TRUE, UINT64_MAX);
-    // mark current frame is using this image
-    m_imagesInFlight[imgIndex] = m_inFlightFences[m_curretFrameIndex];
-
-    // Reset fences into 'unsignaled' state
-    vkResetFences(m_device, 1, &m_inFlightFences[m_curretFrameIndex]);
-#endif
-
-    submitCommandBuffer(m_curretFrameIndex, imgIndex);
-    submitPresentation(m_curretFrameIndex, imgIndex);
 }
 
 
